@@ -9,8 +9,9 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
+    std::shared_ptr<State> state (new State());
 
-    Canvas *canvas = new Canvas();
+    Canvas *canvas = new Canvas(state);
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(canvas);

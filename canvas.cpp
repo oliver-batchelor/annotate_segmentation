@@ -1,6 +1,7 @@
 #include "canvas.h"
 
-Canvas::Canvas() {
+
+Canvas::Canvas(std::shared_ptr<State> state) : state(state) {
     setMouseTracking(true);
 }
 
@@ -9,6 +10,12 @@ Canvas::Canvas() {
 void Canvas::paintEvent(QPaintEvent * /* event */) {
     QPainter painter(this);
 
+
+    for(auto a : state->areas) {
+
+
+
+    }
 
 
 }

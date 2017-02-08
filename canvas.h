@@ -5,19 +5,20 @@
 #include <QWidget>
 
 
-
+#incude "state.h"
 
 class Canvas : public QWidget
 {
     Q_OBJECT
 
 public:
-    Canvas();
+    Canvas(std::shared_ptr<State> _state);
+
 
 protected:
 //    bool event(QEvent *event);
 //    void resizeEvent(QResizeEvent *event);
-//    void paintEvent(QPaintEvent *event);
+void paintEvent(QPaintEvent *event);
 //    void mousePressEvent(QMouseEvent *event);
 //    void mouseMoveEvent(QMouseEvent *event);
 //    void mouseReleaseEvent(QMouseEvent *event);

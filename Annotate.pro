@@ -22,3 +22,6 @@ HEADERS  += mainwindow.h \
     state.h
 
 FORMS    += mainwindow.ui
+
+CONFIG += c++11
+QMAKE_CXXFLAGS += --std=c++11

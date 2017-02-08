@@ -14,8 +14,6 @@ struct Area {
 class State
 {
 public:
-    typedef std::shared_ptr<State> Ptr;
-
     State();
 
 
