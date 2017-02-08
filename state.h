@@ -2,12 +2,14 @@
 #define STATE_H
 
 #include <memory>
+#include <QPoint>
 
 struct Area {
 
-    QPoint start, end;
+    QPointF start, end;
     float width;
 
+    int label;
 };
 
 
@@ -20,6 +22,14 @@ public:
     std::string filename;
     std::vector<Area> areas;
 
+
+};
+
+
+class Config {
+public:
+
+    std::vector<std::string> labels;
 };
 
 #endif // STATE_H
