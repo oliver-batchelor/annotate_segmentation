@@ -14,16 +14,31 @@ float length(QPointF const &p) {
 }
 
 
+inline perpLine(QPointF const &start, QPointF const &end) {
+    QPointF line = end - start;
+    QPointF dir = line / length(line);
+
+    return QPointF (dir.y(), -dir.x());
+}
+
 
 QPolygonF areaPoly(Area const &area) {
 
-    QPointF line = area.end - area.start;
-    QPointF dir = line / length(line);
+    QVector<QPointF> v;
 
-    QPointF perp (dir.y(), -dir.x());
-    perp *= area.width;
+//    for(size_t i = 0; i < area.sections.size(); ++i) {
+//        QPointF perp =
+//            (i > 0 ? segs area.sections[i - 1] : QPointF(0, 0)) +
+//            (i < area.sections ? area.sections[i - 1] : QPointF(0, 0))
+//                ;
 
-    QVector<QPointF> v = { area.start - perp, area.start + perp, area.end + perp, area.end - perp };
+
+//    }
+
+    QPointF perp = perpLine(area.start, area.end) * area.width;
+
+
+    = { area.start - perp, area.start + perp, area.end + perp, area.end - perp };
     return QPolygonF(v);
 }
 
@@ -44,8 +59,6 @@ inline void drawArea(QPainter *painter, Area const &area) {
 }
 
 void Canvas::mousePressEvent(QMouseEvent *event) {
-
-    std::cout << drawState << std::endl;
 
     if(event->button() == Qt::LeftButton) {
         switch(drawState) {
@@ -77,6 +90,10 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
         case End:
             progress.end = QPointF(event->x(), event->y());
         break;
+
+        case Width:
+            QPointF
+
         default:
         break;
 

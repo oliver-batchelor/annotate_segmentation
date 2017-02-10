@@ -4,11 +4,14 @@
 #include <memory>
 #include <QPoint>
 
-struct Area {
+struct Section {
 
-    QPointF start, end;
+    QPointF pos;
     float width;
+};
 
+struct Area {
+    std::vector<Section> sections;
     int label;
 };
 
