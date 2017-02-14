@@ -3,15 +3,13 @@
 
 #include <memory>
 #include <QPoint>
+#include <QLine>
+#include <QString>
 
-struct Section {
 
-    QPointF pos;
-    float width;
-};
 
 struct Area {
-    std::vector<Section> sections;
+    std::vector<QLineF> sections;
     int label;
 };
 
@@ -19,11 +17,13 @@ struct Area {
 class State
 {
 public:
-    State();
+    State() : currentLabel(0) {}
 
 
-    std::string filename;
+    QString filename;
     std::vector<Area> areas;
+
+    int currentLabel;
 
 
 };

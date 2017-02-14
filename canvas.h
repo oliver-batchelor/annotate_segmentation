@@ -6,9 +6,9 @@
 #include "state.h"
 
 enum DrawState {
-    Start,
-    End,
-    Width
+    Waiting,
+    First,
+    Second
 };
 
 class Canvas : public QWidget
@@ -17,11 +17,14 @@ class Canvas : public QWidget
 
 public:
     Canvas(std::shared_ptr<State> _state);
-
+    void setImage(QPixmap const& p);
 
 protected:
+    void setLast(QPointF const &p);
+
+
     //    bool event(QEvent *event);
-    //    void resizeEvent(QResizeEvent *event);
+    //void resizeEvent(QResizeEvent *event);
     void paintEvent(QPaintEvent *event);
     void mousePressEvent(QMouseEvent *event);
     void mouseMoveEvent(QMouseEvent *event);
@@ -33,6 +36,7 @@ private:
     DrawState drawState;
 
     Area progress;
+    QPixmap image;
 };
 
 #endif // CANVAS_H
