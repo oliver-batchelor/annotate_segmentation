@@ -17,7 +17,13 @@ class Canvas : public QWidget
 
 public:
     Canvas(std::shared_ptr<State> _state);
+
     void setImage(QPixmap const& p);
+
+public slots:
+    void zoom(float zoom);
+    void setLabel(int label);
+
 
 protected:
     void setLast(QPointF const &p);
@@ -37,6 +43,9 @@ private:
 
     Area progress;
     QPixmap image;
+    QPixmap scaled;
+
+    float scale;
 };
 
 #endif // CANVAS_H

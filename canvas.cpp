@@ -5,7 +5,7 @@
 #include <iostream>
 
 Canvas::Canvas(std::shared_ptr<State> state)
-        : state(state), drawState(Waiting) {
+        : state(state), drawState(Waiting), scale(1.0f) {
     setMouseTracking(true);
 }
 
@@ -87,12 +87,32 @@ inline void drawArea(QPainter *painter, Area const &area) {
     painter->restore();
 }
 
+void Canvas::zoom(float level) {
+    scale = level / 100;
+
+    if(!image.isNull()) {
+        scaled = image.scaled(image.size() * scale);
+    } else {
+        scaled = QPixmap();
+    }
+
+    resize(scaled.size());
+
+}
+
 void Canvas::setImage(QPixmap const &p) {
 
     image = p;
+    zoom(scale * 100);
+}
 
+void Canvas::setLabel(int label) {
+    if(label != progress.label) {
+
+    }
 
 }
+
 
 void Canvas::setLast(QPointF const &p) {
 
@@ -108,8 +128,18 @@ void Canvas::setLast(QPointF const &p) {
 
 }
 
+void Canvas::pushArea() {
+    if(progress.sections.size() >= 2) {
+        progress.sections.pop_back();
+        state->areas.push_back(progress);
+    }
+
+    progress.sections.clear();
+}
+
+
 void Canvas::mousePressEvent(QMouseEvent *event) {
-    QPointF p(event->x(), event->y());
+    QPointF p(event->x() / scale, event->y() / scale);
 
 
     if(event->button() == Qt::LeftButton) {
@@ -139,11 +169,7 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     } else {
 
        if(drawState != Waiting) {
-           progress.sections.pop_back();
-           if(progress.sections.size() >= 2) {
-               state->areas.push_back(progress);
-               progress.sections.clear();
-           }
+           pushArea();
         }
 
         drawState = Waiting;
@@ -154,7 +180,7 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
-    QPointF p(event->x(), event->y());
+    QPointF p(event->x() / scale, event->y() / scale);
     setLast(p);
 
     this->repaint();
@@ -163,10 +189,12 @@ void Canvas::mouseMoveEvent(QMouseEvent *event) {
 void Canvas::paintEvent(QPaintEvent * /* event */) {
     QPainter painter(this);
 
-    painter.setRenderHint(QPainter::Antialiasing, true);
     painter.fillRect(rect(), QColor(Qt::gray));
+    painter.drawPixmap(0, 0, scaled);
 
+    painter.setRenderHint(QPainter::Antialiasing, true);
 
+    painter.scale(scale, scale);
 
     if(progress.sections.size()) {
         drawArea(&painter, progress);

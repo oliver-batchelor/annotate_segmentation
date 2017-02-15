@@ -5,6 +5,8 @@
 
 #include <QFileInfo>
 #include <QPixmap>
+#include <QScrollArea>
+#include <QKeyEvent>
 
 #include <iostream>
 
@@ -14,14 +16,41 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    state = std::shared_ptr<State>(new State());
+    state = std::shared_ptr <State>(new State());
     canvas = new Canvas(state);
 
-    QVBoxLayout *layout = new QVBoxLayout;
-    layout->addWidget(canvas);
+    connect(ui->scaleSlider, &QSlider::valueChanged, canvas, &Canvas::zoom);
 
-    ui->holder->setLayout(layout);
+    config = std::shared_ptr<Config>(new Config());
+    config->labels = {"trunk", "above whirl"};
+
+    int label = 1;
+    for(std::string const& l : config->labels) {
+        QListWidgetItem *item = new QListWidgetItem(l.c_str());
+        item->setData(Qt::UserRole, QVariant(label++));
+        ui->labelList->addItem(item);
+    }
+
+    ui->labelList->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->labelList->setCurrentRow(0);
+
+    //QListWidgetItem *item = ui->labelList->currentItem();
+    //std::cout << item->data(Qt::UserRole).toInt() << std::endl;
+
+    ui->scrollArea->setWidget(canvas);
 }
+
+void MainWindow::keyPressEvent(QKeyEvent *event) {
+
+   int number = event->key() - '0';
+   if(number >= 1 && number <= config->labels.size()) {
+      int label = number - 1;
+      ui->labelList->setCurrentRow(label);
+
+      canvas->setLabel(label);
+   }
+}
+
 
 
 bool MainWindow::loadImage(QString const &path) {
@@ -42,6 +71,7 @@ bool MainWindow::loadImage(QString const &path) {
 
     return false;
 }
+
 
 
 bool MainWindow::nextImage(QDir const &path) {

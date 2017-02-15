@@ -37,6 +37,7 @@ int main(int argc, char *argv[])
 
     MainWindow w;
     if(w.nextImage(path)) {
+        w.setWindowState(Qt::WindowMaximized);
         w.show();
         return app.exec();
     } else {

@@ -24,10 +24,16 @@ public:
 
     ~MainWindow();
 
+protected:
+
+    virtual void keyPressEvent(QKeyEvent *event);
+
 private:
     Ui::MainWindow *ui;
 
     std::shared_ptr<State> state;
+    std::shared_ptr<Config>  config;
+
     Canvas *canvas;
 };
 
