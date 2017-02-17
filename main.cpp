@@ -35,8 +35,8 @@ int main(int argc, char *argv[])
 
     std::cout << "Annotating images in path: " << path.canonicalPath().toStdString()  << std::endl;
 
-    MainWindow w;
-    if(w.nextImage(path)) {
+    MainWindow w(path);
+    if(w.hasImage()) {
         w.setWindowState(Qt::WindowMaximized);
         w.show();
         return app.exec();

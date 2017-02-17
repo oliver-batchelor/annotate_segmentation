@@ -22,33 +22,6 @@ inline QPointF perpLine(QPointF const &start, QPointF const &end) {
 }
 
 
-//QPolygonF areaPoly(Area const &area) {
-
-//    QVector<QPointF> points;
-
-//    for(QLineF const& s : area.sections) {
-
-//        bool backward = false;
-//        if(points.size()) {
-//            QLineF l1 (points.back(), s.p2());
-//            QLineF l2 (points.front(), s.p1());
-
-//            backward = l1.intersect(l2, NULL);
-//        }
-
-//        std::cout << backward << std::endl;
-
-//        if(!backward) {
-//            points.push_front(s.p1());
-//            points.push_back(s.p2());
-//        } else {
-//            points.push_front(s.p2());
-//            points.push_back(s.p1());
-//        }
-//    }
-
-//    return QPolygonF(points);
-//}
 
 inline bool backward(QLineF const &p, QLineF const &n) {
     return QLineF (p.p1(), n.p1()).intersect(QLineF (p.p2(), n.p2()), NULL) == QLineF::BoundedIntersection;
@@ -59,32 +32,34 @@ inline QLineF flip(QLineF &l) {
 }
 
 QPolygonF makeQuad(QLineF p, QLineF n) {
-    if(backward(p, n)) {
-        n = flip(n);
-    }
-
     QVector<QPointF> v = {p.p1(), n.p1(), n.p2(), p.p2()};
     return QPolygonF (v);
 }
 
-inline void drawArea(QPainter *painter, Area const &area) {
+Rect makeRect(QLineF p, QLineF n, int label) {
+    if(backward(p, n)) n = flip(n);
+    return Rect(p, n, label);
+}
 
-    painter->save();
+inline void drawRect(Rect const &r, QPainter *painter) {
 
-    QPen pen(Qt::black);
-    pen.setWidth(2);
-
-    painter->setPen(pen);
-
-    QColor c ((Qt::GlobalColor)area.label + 7);
+    std::cout << r.label << std::endl;
+    QColor c ((Qt::GlobalColor)(r.label + 8));
     c.setAlpha(127);
     painter->setBrush(c);
 
-    for(size_t i = 1; i < area.sections.size(); ++i) {
-        painter->drawPolygon(makeQuad(area.sections[i - 1], area.sections[i]));
+    painter->drawPolygon(makeQuad(r.side1, r.side2));
+}
+
+inline void drawArea(QPainter *painter, Area const &area) {
+
+
+
+
+    for(Rect const &r : area.sections) {
+        drawRect(r, painter);
     }
 
-    painter->restore();
 }
 
 void Canvas::zoom(float level) {
@@ -107,35 +82,21 @@ void Canvas::setImage(QPixmap const &p) {
 }
 
 void Canvas::setLabel(int label) {
-    if(label != progress.label) {
-
-    }
-
+    currentLabel = label;
+    repaint();
 }
 
 
-void Canvas::setLast(QPointF const &p) {
-
-    QLineF &last = progress.sections.back();
+void Canvas::setPoint(QPointF const &p) {
 
     switch(drawState) {
-    case First: last.setP1(p);
-    case Second: last.setP2(p);
+    case First: currentSection.setP1(p);
+    case Second: currentSection.setP2(p);
     default: break;
     }
 
-
-
 }
 
-void Canvas::pushArea() {
-    if(progress.sections.size() >= 2) {
-        progress.sections.pop_back();
-        state->areas.push_back(progress);
-    }
-
-    progress.sections.clear();
-}
 
 
 void Canvas::mousePressEvent(QMouseEvent *event) {
@@ -145,23 +106,26 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     if(event->button() == Qt::LeftButton) {
         switch(drawState) {
         case Waiting:
-            progress.label = state->currentLabel;
-
-            progress.sections.clear();
-            progress.sections.push_back(QLineF(p, p));
-
+            currentSection = QLineF(p, p);
             drawState = Second;
         break;
 
         case First:
-            setLast(p);
+            currentSection = QLineF(p, p);
             drawState = Second;
         break;
 
         case Second:
-            setLast(p);
+            currentSection.setP2(p);
 
-            progress.sections.push_back(QLineF(p, p));
+            if(lastSection) {
+                Rect r = makeRect(*lastSection, currentSection, currentLabel);
+                currentArea.sections.push_back(r);
+            }
+
+            lastSection = currentSection;
+            currentSection = QLineF(p, p);
+
             drawState = First;
 
         break;
@@ -169,19 +133,35 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     } else {
 
        if(drawState != Waiting) {
-           pushArea();
+
+           if(currentArea.sections.size())
+               state->areas.push_back(currentArea);
+
+           currentArea.sections.clear();
         }
 
-        drawState = Waiting;
+       lastSection.reset();
+       drawState = Waiting;
     }
 
     this->repaint();
+}
 
+void Canvas::mouseReleaseEvent(QMouseEvent *event) {
+    QPointF p(event->x() / scale, event->y() / scale);
+
+    if(selection) {
+
+        selection->setBottomRight(p);
+        selection.reset();
+
+
+    }
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
     QPointF p(event->x() / scale, event->y() / scale);
-    setLast(p);
+    setPoint(p);
 
     this->repaint();
 }
@@ -195,16 +175,30 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
     painter.setRenderHint(QPainter::Antialiasing, true);
 
     painter.scale(scale, scale);
+    \
+    QPen pen(Qt::black);
+    pen.setWidth(2 / scale);
 
-    if(progress.sections.size()) {
-        drawArea(&painter, progress);
-    }
-
+    painter.setPen(pen);
 
 
     for(auto a : state->areas) {
         drawArea(&painter, a);
     }
 
+    drawArea(&painter, currentArea);
+
+    if(lastSection) {
+        std::cout << currentLabel << std::endl;
+        drawRect(makeRect(*lastSection, currentSection, currentLabel), &painter);
+    }
+
+    if(drawState != Waiting) {
+        painter.drawLine(currentSection);
+    }
+
+    if(selection) {
+        painter.drawRect(*selection);
+    }
 
 }

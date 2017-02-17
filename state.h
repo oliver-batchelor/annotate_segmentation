@@ -6,24 +6,42 @@
 #include <QLine>
 #include <QString>
 
+struct Rect {
 
+    Rect (QLineF side1, QLineF side2, int label) \
+        : side1(side1), side2(side2), label(label) {}
 
-struct Area {
-    std::vector<QLineF> sections;
+    Rect() : label(0) {}
+
+    QLineF side1;
+    QLineF side2;
+
+    int label;
+
+};
+
+struct Point {
+    QPointF p;
+    float radius;
+};
+
+struct Line {
+    Point start;
+    Point end;
+
     int label;
 };
+
 
 
 class State
 {
 public:
-    State() : currentLabel(0) {}
+    State() {}
 
 
     QString filename;
     std::vector<Area> areas;
-
-    int currentLabel;
 
 
 };

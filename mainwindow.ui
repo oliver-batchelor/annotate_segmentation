@@ -92,7 +92,7 @@
       <item>
        <layout class="QHBoxLayout" name="horizontalLayout">
         <item>
-         <widget class="QCheckBox" name="checkBox">
+         <widget class="QCheckBox" name="freshImage">
           <property name="text">
            <string>Fresh Image</string>
           </property>
@@ -105,7 +105,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QPushButton" name="pushButton">
+         <widget class="QPushButton" name="nextImage">
           <property name="text">
            <string>Next</string>
           </property>
