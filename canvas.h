@@ -7,11 +7,6 @@
 
 #include <boost/optional.hpp>
 
-enum DrawState {
-    Waiting,
-    First,
-    Second
-};
 
 class Canvas : public QWidget
 {
@@ -24,7 +19,11 @@ public:
 
 public slots:
     void zoom(float zoom);
+
     void setLabel(int label);
+    void setBrushWidth(int width);
+
+    void cancel();
 
 
 protected:
@@ -39,17 +38,16 @@ protected:
 
 private:
 
+    Line currentLine();
+
     std::shared_ptr<State> state;
-    DrawState drawState;
 
-    boost::optional<QLineF> lastSection;
-    QLineF currentSection;
-
-    boost::optional<QRectF> selection;
-
+    boost::optional<Point> lastPoint;
+    Point currentPoint;
 
     int currentLabel;
-    Area currentArea;
+
+    boost::optional<QRectF> selection;
 
     QPixmap image;
     QPixmap scaled;
