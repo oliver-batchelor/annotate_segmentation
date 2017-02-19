@@ -37,15 +37,16 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event);
 
 private:
+    void mouseMove(QMouseEvent *event);
 
-    Line currentLine();
 
     std::shared_ptr<State> state;
 
-    boost::optional<Point> lastPoint;
+    Area currentArea;
     Point currentPoint;
 
     int currentLabel;
+    float currentWidth;
 
     boost::optional<QRectF> selection;
 

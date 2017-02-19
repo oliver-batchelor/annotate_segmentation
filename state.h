@@ -14,23 +14,15 @@ struct Point {
     Point() : r(1.0f) {}
 
     QPointF p;
-    float radius;
+    float r;
 };
 
-struct Line {
-    Line(QPointF const &start, float end, int label)
-        : start(start), end(end), label (label) {}
+struct Area {
+    Area(int label = 0) : label(label) {}
 
-    Line() : label(0) {}
-
-
-    Point start;
-    Point end;
-
+    std::vector<Point> line;
     int label;
 };
-
-
 
 class State
 {
@@ -39,7 +31,7 @@ public:
 
 
     QString filename;
-    std::vector<std::vector<Line> > areas;
+    std::vector<Area> areas;
 
 
 };
