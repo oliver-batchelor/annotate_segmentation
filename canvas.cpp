@@ -1,12 +1,14 @@
 #include "canvas.h"
 #include <QPainter>
 #include <QMouseEvent>
+#include <QPolygonF>
 
 #include <iostream>
 
 Canvas::Canvas(std::shared_ptr<State> state)
-        : state(state), currentWidth(20.0f), scale(1.0f) {
+        : state(state), scale(1.0f) {
     setMouseTracking(true);
+    currentPoint.r = 20.0;
 }
 
 float length(QPointF const &p) {
@@ -21,8 +23,36 @@ inline QPointF perpLine(QPointF const &start, QPointF const &end) {
     return QPointF (dir.y(), -dir.x());
 }
 
+QPolygonF circle(float r) {
 
+    const double pi = 3.1415926535897;
+    float c = r * 2 * pi;
 
+    size_t sides = std::max<size_t>(4, size_t(c / 4.0));
+    float inc = (2 * pi) / float(sides);
+
+    QVector<QPointF> v;
+    for(size_t i = 0; i < sides; ++i) {
+        float t = inc * i;
+        v.push_back(QPointF(r * std::sin(t), r * cos(t)));
+    }
+
+    return QPolygonF (v);
+}
+
+QPolygonF point(Point const &p) {
+    QPolygonF c = circle(p.r);
+    c.translate(p.p);
+
+    return c;
+}
+
+inline QPolygonF makeRect(Point const &p1, Point const p2) {
+    QPointF perp = perpLine(p1.p, p2.p);
+
+    QVector<QPointF> v = {p1.p + perp * p1.r, p2.p + perp * p2.r, p2.p - perp * p2.r, p1.p - perp * p1.r};
+    return QPolygonF(v);
+}
 
 inline void drawArea(Area const &a, QPainter *painter) {
 
@@ -30,6 +60,16 @@ inline void drawArea(Area const &a, QPainter *painter) {
     c.setAlpha(127);
     painter->setBrush(c);
 
+    QPolygonF poly = point(a.line[0]);
+    for(size_t i = 1; i < a.line.size(); ++i) {
+        if(length(a.line[i - 1].p - a.line[i].p) > 0.01) {
+
+            QPolygonF strip = makeRect(a.line[i - 1], a.line[i]);
+            poly = poly.united(strip).united(point(a.line[i]));
+        }
+    }
+
+    painter->drawPolygon(poly);
    // painter->drawPolygon(makeQuad(r.side1, r.side2));
 }
 
@@ -140,7 +180,7 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
 
 
 void Canvas::setBrushWidth(int width) {
-    currentWidth = width;
+    currentPoint.r = width;
     repaint();
 }
 

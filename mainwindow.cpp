@@ -21,6 +21,9 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent) :
     canvas = new Canvas(state);
 
     connect(ui->scaleSlider, &QSlider::valueChanged, canvas, &Canvas::zoom);
+
+    connect(ui->brushWidth, &QSlider::valueChanged, canvas, &Canvas::setBrushWidth);
+
     connect(ui->nextImage, &QPushButton::clicked, this, &MainWindow::nextImage);
 
 
@@ -53,6 +56,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
       canvas->setLabel(label);
    }
 
+
    if(event->key() == '-') {
        int value = ui->scaleSlider->value();
        ui->scaleSlider->setValue(value - ui->scaleSlider->pageStep());
@@ -61,6 +65,15 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
    if(event->key() == '+') {
        int value = ui->scaleSlider->value();
        ui->scaleSlider->setValue(value + ui->scaleSlider->pageStep());
+   }
+   if(event->key() == '[') {
+       float value = ui->brushWidth->value();
+       ui->brushWidth->setValue(value - std::max<int>(1, value * 0.1));
+   }
+
+   if(event->key() == ']') {
+       float value = ui->brushWidth->value();
+       ui->brushWidth->setValue(value + std::max<int>(1, value * 0.1));
    }
 
 }

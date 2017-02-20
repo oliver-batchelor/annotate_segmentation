@@ -46,7 +46,6 @@ private:
     Point currentPoint;
 
     int currentLabel;
-    float currentWidth;
 
     boost::optional<QRectF> selection;
 
