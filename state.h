@@ -32,9 +32,10 @@ public:
 
     QString filename;
     std::vector<Area> areas;
-
-
 };
+
+
+
 
 
 class Config {

@@ -26,8 +26,13 @@ public:
 protected slots:
 
     void nextImage();
+    void prevImage();
+
 
 protected:
+
+    void save();
+    void loadNext(bool reverse = false);
 
     virtual void keyPressEvent(QKeyEvent *event);   
     bool loadImage(QString const &path);

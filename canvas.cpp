@@ -54,12 +54,8 @@ inline QPolygonF makeRect(Point const &p1, Point const p2) {
     return QPolygonF(v);
 }
 
-inline void drawArea(Area const &a, QPainter *painter) {
 
-    QColor c ((Qt::GlobalColor)(a.label + 8));
-    c.setAlpha(127);
-    painter->setBrush(c);
-
+inline QPolygonF areaPoly(Area const& a) {
     QPolygonF poly = point(a.line[0]);
     for(size_t i = 1; i < a.line.size(); ++i) {
         if(length(a.line[i - 1].p - a.line[i].p) > 0.01) {
@@ -69,8 +65,29 @@ inline void drawArea(Area const &a, QPainter *painter) {
         }
     }
 
-    painter->drawPolygon(poly);
-   // painter->drawPolygon(makeQuad(r.side1, r.side2));
+    return poly;
+
+}
+
+inline void drawAreaMask(Area const &a, QPainter *painter) {
+
+    QColor c (a.label + 1, a.label + 1, a.label + 1);
+    painter->setBrush(c);
+    painter->setPen(Qt::NoPen);
+
+    QPolygonF poly = areaPoly(a);
+    painter->drawPolygon(poly, Qt::OddEvenFill);
+}
+
+
+inline void drawArea(Area const &a, QPainter *painter) {
+
+    QColor c ((Qt::GlobalColor)(a.label + 8));
+    c.setAlpha(127);
+    painter->setBrush(c);
+
+    QPolygonF poly = areaPoly(a);
+    painter->drawPolygon(poly, Qt::OddEvenFill);
 }
 
 
@@ -105,12 +122,9 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     mouseMove(event);
 
     if(event->button() == Qt::LeftButton) {
-        currentArea.line.push_back(currentPoint);
+        run(drawCmd(currentPoint));
     } else {
-        currentArea.line.push_back(currentPoint);
-
-        state->areas.push_back(currentArea);
-        currentArea.line.clear();
+        run(endCmd(currentPoint));
     }
 
 
@@ -128,7 +142,12 @@ void Canvas::mouseMove(QMouseEvent *event) {
 
     }
 
-    currentPoint.p = QPointF(event->x() / scale, event->y() / scale);
+    if(event->modifiers() & Qt::ControlModifier) {
+        currentPoint.r = length(p - currentPoint.p);
+    } else {
+        currentPoint.p = p;
+    }
+
     this->repaint();
 
 }
@@ -152,16 +171,13 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
     painter.fillRect(rect(), QColor(Qt::gray));
     painter.drawPixmap(0, 0, scaled);
 
+    painter.scale(scale, scale);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    painter.scale(scale, scale);
-    \
     QPen pen(Qt::black);
     pen.setWidth(2 / scale);
 
     painter.setPen(pen);
-
-
     for(auto a : state->areas) {
         drawArea(a, &painter);
     }
@@ -176,17 +192,95 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
 
     drawArea(a, &painter);
 
+
 }
 
+
+
+QImage Canvas::save() {
+    QImage img(image.size(), QImage::Format_RGB32);
+    img.fill(QColor(255, 255, 255));
+
+    QPainter painter;
+    painter.begin(&img);
+
+    for(auto a : state->areas) {
+        drawAreaMask(a, &painter);
+    }
+
+    painter.end();
+
+    return img;
+}
 
 void Canvas::setBrushWidth(int width) {
     currentPoint.r = width;
     repaint();
 }
 
-void Canvas::cancel() {
-    currentArea.line.clear();
-    repaint();
+
+
+
+void Canvas::undo() {
+    if(undos.size()) {
+        Command c = undos.back();
+
+        undos.pop_back();
+        redos.push_back(c);
+        undoCmd(c);
+
+    }
 }
+
+
+void Canvas::redo() {
+    if(redos.size()) {
+        Command c = redos.back();
+
+        redos.pop_back();
+        undos.push_back(c);
+
+        applyCmd(c);
+    }
+}
+
+
+void Canvas::deleteSelection() {
+
+}
+
+
+void Canvas::applyCmd(Command const& c) {
+    if(Draw const *d = boost::get<Draw>(&c)) {
+        currentArea.line.push_back(d->p);
+
+    } else if(End const *e = boost::get<End>(&c)) {
+        currentArea.line.push_back(e->p);
+
+        state->areas.push_back(currentArea);
+        currentArea.line.clear();
+
+    }
+}
+
+
+void Canvas::undoCmd(Command const& c) {
+    if(Draw const *d = boost::get<Draw>(&c)) {
+
+    } else if(End const *e = boost::get<End>(&c)) {
+
+    }
+
+}
+
+
+
+
+void Canvas::run(Command const &c) {
+    redos.clear();
+    applyCmd(c);
+
+}
+
 
 
