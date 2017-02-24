@@ -170,6 +170,12 @@
    <property name="shortcut">
     <string>Ctrl+]</string>
    </property>
+   <property name="shortcutContext">
+    <enum>Qt::ApplicationShortcut</enum>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::ApplicationSpecificRole</enum>
+   </property>
   </action>
   <action name="action_Prev">
    <property name="text">
@@ -177,6 +183,12 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+[</string>
+   </property>
+   <property name="shortcutContext">
+    <enum>Qt::ApplicationShortcut</enum>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::ApplicationSpecificRole</enum>
    </property>
   </action>
   <action name="action_Open">
@@ -186,6 +198,9 @@
    <property name="shortcut">
     <string>Ctrl+O</string>
    </property>
+   <property name="menuRole">
+    <enum>QAction::ApplicationSpecificRole</enum>
+   </property>
   </action>
   <action name="action_Undo">
    <property name="text">
@@ -193,6 +208,12 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Z</string>
+   </property>
+   <property name="shortcutContext">
+    <enum>Qt::ApplicationShortcut</enum>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::ApplicationSpecificRole</enum>
    </property>
   </action>
   <action name="action_Redo">
@@ -202,6 +223,12 @@
    <property name="shortcut">
     <string>Ctrl+Shift+Z</string>
    </property>
+   <property name="shortcutContext">
+    <enum>Qt::ApplicationShortcut</enum>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::ApplicationSpecificRole</enum>
+   </property>
   </action>
   <action name="action_Delete">
    <property name="text">
@@ -209,6 +236,12 @@
    </property>
    <property name="shortcut">
     <string>Backspace</string>
+   </property>
+   <property name="shortcutContext">
+    <enum>Qt::ApplicationShortcut</enum>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::ApplicationSpecificRole</enum>
    </property>
   </action>
  </widget>

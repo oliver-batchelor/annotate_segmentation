@@ -22,7 +22,8 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent) :
     ui->setupUi(this);
 
     state = std::shared_ptr <State>(new State());
-    canvas = new Canvas(state);
+    canvas = new Canvas(state);\
+    ui->scrollArea->setWidget(canvas);
 
     connect(ui->scaleSlider, &QSlider::valueChanged, canvas, &Canvas::zoom);
     connect(ui->nextImage, &QPushButton::clicked, this, &MainWindow::nextImage);
@@ -54,7 +55,7 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent) :
 
     canvas->setLabel(1);
 
-    ui->scrollArea->setWidget(canvas);
+
     nextImage();
 }
 
@@ -69,16 +70,18 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
    }
 
 
+   int amount = std::max<int>(1, ui->scaleSlider->value() * 0.1);
    if(event->key() == '-') {
        int value = ui->scaleSlider->value();
-       ui->scaleSlider->setValue(value - ui->scaleSlider->pageStep());
+       ui->scaleSlider->setValue(value - amount);
    }
 
    if(event->key() == '+') {
        int value = ui->scaleSlider->value();
-       ui->scaleSlider->setValue(value + ui->scaleSlider->pageStep());
+       ui->scaleSlider->setValue(value + amount);
    }
 
+   QMainWindow::keyPressEvent(event);
 }
 
 

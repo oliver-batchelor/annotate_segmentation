@@ -142,7 +142,7 @@ void Canvas::mouseMove(QMouseEvent *event) {
 
     }
 
-    if(event->modifiers() & Qt::ControlModifier) {
+    if(event->modifiers() & Qt::ShiftModifier) {
         currentPoint.r = length(p - currentPoint.p);
     } else {
         currentPoint.p = p;
@@ -261,16 +261,24 @@ void Canvas::applyCmd(Command const& c) {
         currentArea.line.clear();
 
     }
+
+    repaint();
 }
 
 
 void Canvas::undoCmd(Command const& c) {
-    if(Draw const *d = boost::get<Draw>(&c)) {
+    if(boost::get<Draw>(&c)) {
+        currentArea.line.pop_back();
 
-    } else if(End const *e = boost::get<End>(&c)) {
+    } else if(boost::get<End>(&c)) {
 
+        currentArea = state->areas.back();
+        currentArea.line.pop_back();
+
+        state->areas.pop_back();
     }
 
+    repaint();
 }
 
 
@@ -279,6 +287,8 @@ void Canvas::undoCmd(Command const& c) {
 void Canvas::run(Command const &c) {
     redos.clear();
     applyCmd(c);
+
+    undos.push_back(c);
 
 }
 
