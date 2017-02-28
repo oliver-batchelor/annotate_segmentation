@@ -10,15 +10,17 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
-
-
+#include <QShortcut>
+#include <QDebug>
 #include <iostream>
+\
 
-MainWindow::MainWindow(QDir const &path, QWidget *parent) :
-    QMainWindow(parent),
+MainWindow::MainWindow(QDir const &path, QWidget *parent)
+    : QMainWindow(parent),
     ui(new Ui::MainWindow),
     path(path)
 {
+
     ui->setupUi(this);
 
     state = std::shared_ptr <State>(new State());
@@ -38,8 +40,14 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent) :
     connect(ui->action_Redo, &QAction::triggered, canvas, &Canvas::redo);
     connect(ui->action_Delete, &QAction::triggered, canvas, &Canvas::deleteSelection);
 
+    connect(new QShortcut(ui->action_Undo->shortcut(), canvas), &QShortcut::activated, canvas, &Canvas::undo);
+    connect(new QShortcut(ui->action_Redo->shortcut(), canvas), &QShortcut::activated, canvas, &Canvas::redo);
+    connect(new QShortcut(ui->action_Delete->shortcut(), canvas), &QShortcut::activated, canvas, &Canvas::deleteSelection);
 
 
+    connect(new QShortcut(Qt::Key_Escape, canvas), &QShortcut::activated, canvas, &Canvas::cancel);
+
+    \
     config = std::shared_ptr<Config>(new Config());
     config->labels = {"trunk"};
 
@@ -81,10 +89,23 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
        ui->scaleSlider->setValue(value + amount);
    }
 
+
+   if(event->key() == Qt::Key_Shift) {
+       setCursor(Qt::BlankCursor);
+   }
+
+
    QMainWindow::keyPressEvent(event);
 }
 
 
+void MainWindow::keyReleaseEvent(QKeyEvent *e) {
+    if(e->key() == Qt::Key_Shift) {
+        setCursor(Qt::ArrowCursor);
+    }
+
+    QMainWindow::keyReleaseEvent(e);
+}
 
 
 Point readPoint(const QJsonObject &json)
@@ -200,6 +221,8 @@ void MainWindow::save() {
         QFileInfo annot(replaceExt(currentEntry->absoluteFilePath(), ".json"));
         QFileInfo labels(replaceExt(currentEntry->absoluteFilePath(), ".mask"));
 
+        qDebug() << annot.absoluteFilePath();
+
         QFile file(annot.absoluteFilePath());
         file.open(QIODevice::WriteOnly);
 
@@ -212,10 +235,12 @@ void MainWindow::save() {
 
 
 void MainWindow::nextImage() {
+    save();
     loadNext(false);
 }
 
 void MainWindow::prevImage() {
+    save();
     loadNext(true);
 }
 

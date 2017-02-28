@@ -35,6 +35,8 @@ protected:
     void loadNext(bool reverse = false);
 
     virtual void keyPressEvent(QKeyEvent *event);   
+    virtual void keyReleaseEvent(QKeyEvent *e);
+
     bool loadImage(QString const &path);
 
 

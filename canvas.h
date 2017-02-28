@@ -17,7 +17,6 @@ struct End {
 };
 
 struct Cancel {
-    Area a;
 };
 
 typedef boost::variant <Draw, End, Cancel> Command;
@@ -34,9 +33,8 @@ inline Command endCmd(Point const &p) {
     return Command(e);
 }
 
-inline Command cancelCmd(Area const &a) {
+inline Command cancelCmd() {
     Cancel c;
-    c.a = a;
     return Command(c);
 }
 
@@ -62,6 +60,7 @@ public slots:
 
     void undo();
     void redo();
+    void cancel();
 
     void deleteSelection();
 
@@ -77,6 +76,7 @@ protected:
     void mousePressEvent(QMouseEvent *event);
     void mouseMoveEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
+
 
     void applyCmd(Command const& c);
     void undoCmd(Command const& c);
