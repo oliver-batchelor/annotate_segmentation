@@ -55,6 +55,9 @@ inline QPolygonF makeRect(Point const &p1, Point const p2) {
 }
 
 
+
+
+
 inline QPolygonF areaPoly(Area const& a) {
     QPolygonF poly = point(a.line[0]);
     for(size_t i = 1; i < a.line.size(); ++i) {
@@ -66,8 +69,27 @@ inline QPolygonF areaPoly(Area const& a) {
     }
 
     return poly;
+}
+
+
+inline QPainterPath areaPath(Area const& a) {
+    QPainterPath path;
+    for(Point const &p : a.line) {
+        path.addEllipse(p.p, p.r, p.r);
+    }
+
+
+    for(size_t i = 1; i < a.line.size(); ++i) {
+        if(length(a.line[i - 1].p - a.line[i].p) > 0.01) {
+            path.addPolygon(makeRect(a.line[i - 1], a.line[i]));
+        }
+    }
+
+    return path;
 
 }
+
+
 
 inline void drawAreaMask(Area const &a, QPainter *painter) {
 
@@ -101,12 +123,17 @@ void Canvas::zoom(float level) {
     }
 
     resize(scaled.size());
+    repaint();
+
 
 }
 
 void Canvas::setImage(QPixmap const &p) {
 
     image = p;
+    selecting.reset();
+    selection.reset();
+
     zoom(scale * 100);
 }
 
@@ -126,7 +153,11 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
 
     if(event->modifiers() & Qt::ControlModifier) {
         selection = QRectF(p, p);
+        selecting = p;
     } else {
+
+        selection.reset();
+
         if(event->button() == Qt::LeftButton) {
             run(drawCmd(currentPoint));
         } else {
@@ -137,17 +168,16 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
 
     this->repaint();
 }
-\
 
 
 
 void Canvas::mouseMove(QMouseEvent *event) {
     QPointF p(event->x() / scale, event->y() / scale);
 
-    if(selection) {
+    if(selecting) {
 
-        QPointF topLeft (std::min<float>(selection->left(), p.x()), std::min<float>(selection->top(), p.y()));
-        QPointF bottomRight (std::max<float>(selection->right(), p.x()), std::max<float>(selection->bottom(), p.y()));
+        QPointF topLeft (std::min<float>(selecting->x(), p.x()), std::min<float>(selecting->y(), p.y()));
+        QPointF bottomRight (std::max<float>(selecting->x(), p.x()), std::max<float>(selecting->y(), p.y()));
 
         selection = QRectF(topLeft, bottomRight);
 
@@ -177,8 +207,8 @@ void Canvas::mouseMove(QMouseEvent *event) {
 void Canvas::mouseReleaseEvent(QMouseEvent *event) {
     mouseMove(event);
 
-    if(selection) {
-        selection.reset();
+    if(selecting) {
+        selecting.reset();
     }
 
     repaint();
@@ -188,6 +218,15 @@ void Canvas::mouseReleaseEvent(QMouseEvent *event) {
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
     mouseMove(event);
 }
+
+bool Canvas::isSelected(Area const& a) {
+    if(selection)  {
+        QPainterPath path = areaPath(a);
+        return path.intersects(*selection);
+    }
+    return false;
+}
+
 
 void Canvas::paintEvent(QPaintEvent * /* event */) {
     QPainter painter(this);
@@ -199,17 +238,26 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
     painter.setRenderHint(QPainter::Antialiasing, true);
 
     QPen pen;
-    pen.setColor(QColor(0, 0, 0, 127));
-    pen.setWidth(2 / scale);
 
-    painter.setPen(pen);
     for(auto a : state->areas) {
+        bool s = isSelected(a);
+        pen.setColor(QColor(s ? 255 : 0, 0, 0, 127));
+        pen.setWidth((s ? 4 : 2) / scale);
+        painter.setPen(pen);
+
         drawArea(a, &painter);
     }
 
+
+    pen.setWidth(2 / scale);
+    pen.setColor(QColor(0, 0, 0, 127));
+    painter.setPen(pen);
+
+
     Area a = currentArea;
 
-    if(selection) {
+    if(selecting) {
+        painter.setBrush(QBrush(QColor(0, 127, 127, 127)));
         painter.drawRect(*selection);
     } else {
         a.line.push_back(currentPoint);
@@ -248,6 +296,9 @@ void Canvas::cancel() {
     if(currentArea.line.size()) {
         run(cancelCmd());
     }
+
+    selection.reset();
+
 }
 
 
@@ -277,6 +328,19 @@ void Canvas::redo() {
 
 void Canvas::deleteSelection() {
 
+    std::vector<Deletion> deleted;
+
+    for(size_t i = 0; i < state->areas.size(); ++i) {
+        if(isSelected(state->areas[i])) {
+            Deletion d;
+            d.index = i;
+            d.a = state->areas[i];
+
+            deleted.push_back(d);
+        }
+    }
+
+    run(deleteCmd(deleted));
 }
 
 
@@ -294,6 +358,14 @@ void Canvas::applyCmd(Command const& c) {
 
         state->areas.push_back(currentArea);
         currentArea.line.clear();
+
+    } else if(Delete const *d = boost::get<Delete>(&c)) {
+
+        size_t count = 0;
+        for(Deletion const &del : d->deletes) {
+            state->areas.erase(state->areas.begin() + del.index - count);
+            count++;
+        }
 
     }
 
@@ -315,6 +387,12 @@ void Canvas::undoCmd(Command const& c) {
 
         currentArea = state->areas.back();
         state->areas.pop_back();
+    } else if(Delete const *d = boost::get<Delete>(&c)) {
+
+        for(Deletion const &del : d->deletes) {
+            state->areas.insert(state->areas.begin() + del.index, del.a);
+        }
+
     }
 
     repaint();

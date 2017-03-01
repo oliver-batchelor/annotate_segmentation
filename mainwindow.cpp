@@ -196,7 +196,7 @@ bool MainWindow::loadImage(QString const &path) {
         state->areas.clear();
         state->filename = path;
 
-        QFileInfo annot(replaceExt(path, ".json"));
+        QFileInfo annot(path + ".json");
         if(annot.isFile() && annot.isReadable()) {
             QFile file(annot.absoluteFilePath());
             file.open(QIODevice::ReadOnly);
@@ -218,8 +218,8 @@ bool MainWindow::loadImage(QString const &path) {
 
 void MainWindow::save() {
     if(currentEntry && state->areas.size() && canvas->isModified()) {
-        QFileInfo annot(replaceExt(currentEntry->absoluteFilePath(), ".json"));
-        QFileInfo labels(replaceExt(currentEntry->absoluteFilePath(), ".mask"));
+        QFileInfo annot(currentEntry->absoluteFilePath() + ".json");
+        QFileInfo labels(currentEntry->absoluteFilePath() + ".mask");
 
         qDebug() << annot.absoluteFilePath();
 

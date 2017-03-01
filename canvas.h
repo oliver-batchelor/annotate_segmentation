@@ -19,7 +19,16 @@ struct End {
 struct Cancel {
 };
 
-typedef boost::variant <Draw, End, Cancel> Command;
+struct Deletion {
+    int index;
+    Area a;
+};
+
+struct Delete {
+    std::vector<Deletion> deletes;
+};
+
+typedef boost::variant <Draw, End, Cancel, Delete> Command;
 
 inline Command drawCmd(Point const &p) {
     Draw d;
@@ -37,6 +46,14 @@ inline Command cancelCmd() {
     Cancel c;
     return Command(c);
 }
+
+inline Command deleteCmd(std::vector<Deletion> const& dels) {
+    Delete c;
+    c.deletes = dels;
+
+    return Command(c);
+}
+
 
 
 class Canvas : public QWidget
@@ -81,6 +98,9 @@ protected:
     void applyCmd(Command const& c);
     void undoCmd(Command const& c);
 
+    bool isSelected(Area const& a);
+
+
 
 private:
     void mouseMove(QMouseEvent *event);
@@ -93,7 +113,9 @@ private:
 
     int currentLabel;
 
+
     boost::optional<QRectF> selection;
+    boost::optional<QPointF> selecting;
 
     QPixmap image;
     QPixmap scaled;
