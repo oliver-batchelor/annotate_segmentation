@@ -2,115 +2,46 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QPolygonF>
+#include <QImage>
+#include <QRgb>
 
 #include <iostream>
 
-Canvas::Canvas(std::shared_ptr<State> state)
-        : state(state), scale(1.0f) {
+#include <opencv2/imgproc.hpp>
+
+Canvas::Canvas()
+        : scale(1.0f), mode(Lines), drawing(false) {
     setMouseTracking(true);
     currentPoint.r = 20.0;
-}
 
-float length(QPointF const &p) {
-    return std::sqrt(QPointF::dotProduct(p, p));
-}
+    colorTable = QVector<QRgb>(255, 0);
 
-
-inline QPointF perpLine(QPointF const &start, QPointF const &end) {
-    QPointF line = end - start;
-    QPointF dir = line / length(line);
-
-    return QPointF (dir.y(), -dir.x());
-}
-
-QPolygonF circle(float r) {
-
-    const double pi = 3.1415926535897;
-    float c = r * 2 * pi;
-
-    size_t sides = std::max<size_t>(4, size_t(c / 4.0));
-    float inc = (2 * pi) / float(sides);
-
-    QVector<QPointF> v;
-    for(size_t i = 0; i < sides; ++i) {
-        float t = inc * i;
-        v.push_back(QPointF(r * std::sin(t), r * cos(t)));
+    for(int i = Qt::red; i < Qt::darkYellow; ++i) {
+        colorTable[i - Qt::red + 1] = QColor(Qt::GlobalColor(i)).rgb();
     }
 
-    return QPolygonF (v);
+    QColor c(colorTable[0]);
 }
 
-QPolygonF point(Point const &p) {
-    QPolygonF c = circle(p.r);
-    c.translate(p.p);
-
-    return c;
-}
-
-inline QPolygonF makeRect(Point const &p1, Point const p2) {
-    QPointF perp = perpLine(p1.p, p2.p);
-
-    QVector<QPointF> v = {p1.p + perp * p1.r, p2.p + perp * p2.r, p2.p - perp * p2.r, p1.p - perp * p1.r};
-    return QPolygonF(v);
+float length(cv::Point2f const &p) {
+    return std::sqrt(p.dot(p));
 }
 
 
+inline cv::Point2f perpLine(cv::Point2f const &start, cv::Point2f const &end) {
+    cv::Point2f line = end - start;
+    cv::Point2f dir = line / length(line);
 
-
-
-inline QPolygonF areaPoly(Area const& a) {
-    QPolygonF poly = point(a.line[0]);
-    for(size_t i = 1; i < a.line.size(); ++i) {
-        if(length(a.line[i - 1].p - a.line[i].p) > 0.01) {
-
-            QPolygonF strip = makeRect(a.line[i - 1], a.line[i]);
-            poly = poly.united(strip).united(point(a.line[i]));
-        }
-    }
-
-    return poly;
+    return cv::Point2f (dir.y, -dir.x);
 }
 
 
-inline QPainterPath areaPath(Area const& a) {
-    QPainterPath path;
-    for(Point const &p : a.line) {
-        path.addEllipse(p.p, p.r, p.r);
-    }
-
-
-    for(size_t i = 1; i < a.line.size(); ++i) {
-        if(length(a.line[i - 1].p - a.line[i].p) > 0.01) {
-            path.addPolygon(makeRect(a.line[i - 1], a.line[i]));
-        }
-    }
-
-    return path;
-
+inline std::vector<cv::Point2f> makeRect(Point const &p1, Point const p2) {
+    cv::Point2f perp = perpLine(p1.p, p2.p);
+    return std::vector<cv::Point2f> {p1.p + perp * p1.r, p2.p + perp * p2.r, p2.p - perp * p2.r, p1.p - perp * p1.r};
 }
 
 
-
-inline void drawAreaMask(Area const &a, QPainter *painter) {
-
-    QColor c (a.label + 1, a.label + 1, a.label + 1);
-    painter->setBrush(c);
-    painter->setPen(Qt::NoPen);
-
-    QPolygonF poly = areaPoly(a);
-    painter->drawPolygon(poly, Qt::OddEvenFill);
-}
-
-
-inline void drawArea(Area const &a, QPainter *painter) {
-
-    QColor c ((Qt::GlobalColor)(a.label + 8));
-    c.setAlpha(64);
-    painter->setBrush(c);
-
-    QPolygonF poly = areaPoly(a);
-    painter->drawPolygon(poly, Qt::OddEvenFill);
-}
 
 
 void Canvas::zoom(float level) {
@@ -128,11 +59,21 @@ void Canvas::zoom(float level) {
 
 }
 
-void Canvas::setImage(QPixmap const &p) {
+void Canvas::setImage(QPixmap const &p, cv::Mat1b mask_) {
 
     image = p;
+    if(mask_.cols == p.width() && mask_.rows == p.height()) {
+        mask = mask_;
+    } else {
+        mask = cv::Mat1b(p.height(), p.width());
+        mask = 0;
+    }
+
     selecting.reset();
     selection.reset();
+
+    undos.clear();
+    redos.clear();
 
     zoom(scale * 100);
 }
@@ -144,65 +85,125 @@ void Canvas::setLabel(int label) {
 
 
 
+inline void drawPoint(cv::Mat1b &image, Point const &p, int label) {
+    cv::Scalar c(label, label, label);
+    cv::circle(image, cv::Point(p.p.x, p.p.y), p.r, c, -1);
+}
+
+inline void drawRect(cv::Mat1b &image, cv::Rect2f const &s, int label) {
+    image(s) = label;
+}
+
+inline void drawLine(cv::Mat1b &image, Point const &start, Point const& end, int label) {
+    std::vector<cv::Point2f> rect = makeRect(start, end);
+    std::vector<cv::Point> points(rect.begin(), rect.end());
+
+    cv::Scalar c(label, label, label);
+    cv::fillConvexPoly(image, points, c);
+
+    drawPoint(image, start, label);
+    drawPoint(image, end, label);
+}
+
+
 
 void Canvas::mousePressEvent(QMouseEvent *event) {
-    QPointF p(event->x() / scale, event->y() / scale);
+    cv::Point2f p(event->x() / scale, event->y() / scale);
 
     mouseMove(event);
 
-
-    if(event->modifiers() & Qt::ControlModifier) {
-        selection = QRectF(p, p);
+    switch(mode) {
+    case Selection:
+        selection = cv::Rect2f(p, p);
         selecting = p;
-    } else {
-
-        selection.reset();
-
+    break;
+    case Lines:
         if(event->button() == Qt::LeftButton) {
-            run(drawCmd(currentPoint));
-        } else {
-            run(endCmd(currentPoint));
-        }
-    }
+            if(currentLine) {
+                snapshot();
+                drawLine(mask, *currentLine, currentPoint, currentLabel);
 
+                if(event->modifiers() & Qt::ControlModifier) {
+                    currentLine = currentPoint;
+
+                } else {
+                    currentLine.reset();
+                }
+            } else {
+                currentLine = currentPoint;
+            }
+
+        }
+    break;
+    case Points:
+        snapshot();
+
+        currentPoint.p = p;
+        drawPoint(mask, currentPoint, currentLabel);
+
+        drawing = true;
+
+    break;
+    }
 
     this->repaint();
 }
 
 
+void Canvas::deleteSelection() {
+    snapshot();
+
+    cv::Mat1b s = selectionMask();
+    s = 0;
+
+    repaint();
+}
+
+cv::Mat1b Canvas::selectionMask() {
+    if(selection) {
+        return mask(*selection);
+    }
+
+    cv::Rect rect(0, 0, mask.cols, mask.rows);
+    return mask(rect);
+}
+
 
 void Canvas::mouseMove(QMouseEvent *event) {
-    QPointF p(event->x() / scale, event->y() / scale);
+    cv::Point2f p(event->x() / scale, event->y() / scale);
 
     if(selecting) {
 
-        QPointF topLeft (std::min<float>(selecting->x(), p.x()), std::min<float>(selecting->y(), p.y()));
-        QPointF bottomRight (std::max<float>(selecting->x(), p.x()), std::max<float>(selecting->y(), p.y()));
+        cv::Point2f topLeft (std::min<float>(selecting->x, p.x), std::min<float>(selecting->y, p.y));
+        cv::Point2f bottomRight (std::max<float>(selecting->x, p.x), std::max<float>(selecting->y, p.y));
 
-        selection = QRectF(topLeft, bottomRight);
+        selection = cv::Rect2f(topLeft, bottomRight);
 
     } else {
 
         if(event->modifiers() & Qt::ShiftModifier) {
+            cv::Point2f d = p - currentPoint.p;
+            currentPoint.r = std::min<float>(500, std::max<float>(4, currentPoint.r - d.y));
 
-            QCursor c = cursor();
-            c.setPos(mapToGlobal(currentPoint.p.toPoint() * scale));
-            c.setShape(Qt::BlankCursor);
-            setCursor(c);
-
-            QPointF d = p - currentPoint.p;
-            currentPoint.r = std::min<float>(500, std::max<float>(1, currentPoint.r - d.y()));
-
-        } else {
-
-            setCursor(Qt::ArrowCursor);
-            currentPoint.p = p;
         }
     }
 
-    this->repaint();
+    currentPoint.p = p;
 
+    switch(mode) {
+    case Points:
+        if(drawing) {
+            drawPoint(mask, currentPoint, currentLabel);
+
+        }
+    break;
+    default: break;
+    }
+
+
+    this->repaint();
 }
+
 
 void Canvas::mouseReleaseEvent(QMouseEvent *event) {
     mouseMove(event);
@@ -211,21 +212,15 @@ void Canvas::mouseReleaseEvent(QMouseEvent *event) {
         selecting.reset();
     }
 
+    drawing = false;
     repaint();
-
 }
 
 void Canvas::mouseMoveEvent(QMouseEvent *event) {
     mouseMove(event);
 }
 
-bool Canvas::isSelected(Area const& a) {
-    if(selection)  {
-        QPainterPath path = areaPath(a);
-        return path.intersects(*selection);
-    }
-    return false;
-}
+
 
 
 void Canvas::paintEvent(QPaintEvent * /* event */) {
@@ -238,52 +233,72 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
     painter.setRenderHint(QPainter::Antialiasing, true);
 
     QPen pen;
-
-    for(auto a : state->areas) {
-        bool s = isSelected(a);
-        pen.setColor(QColor(s ? 255 : 0, 0, 0, 127));
-        pen.setWidth((s ? 4 : 2) / scale);
-        painter.setPen(pen);
-
-        drawArea(a, &painter);
-    }
-
-
-    pen.setWidth(2 / scale);
-    pen.setColor(QColor(0, 0, 0, 127));
+    pen.setWidth(2);
     painter.setPen(pen);
 
 
-    Area a = currentArea;
+    cv::Mat1b edit = mask;
 
-    if(selecting) {
-        painter.setBrush(QBrush(QColor(0, 127, 127, 127)));
-        painter.drawRect(*selection);
-    } else {
-        a.line.push_back(currentPoint);
-        drawArea(a, &painter);
+    if(mode == Lines && currentLine) {
+        edit = mask.clone();
+        drawLine(edit, *currentLine, currentPoint, currentLabel);
     }
 
+    QImage indexMask(edit.data, edit.cols, edit.rows, QImage::Format_Indexed8);
+    indexMask.setColorTable(colorTable);
 
+    QPixmap pm = QPixmap::fromImage(indexMask);
+
+    painter.setOpacity(0.4);
+    painter.drawPixmap(0, 0, pm);
+
+    painter.setOpacity(1);
+
+    QColor lc = QColor(colorTable[currentLabel]);
+    lc.setAlpha(80);
+
+    switch(mode) {
+
+
+    case Selection:
+        if(selection) {
+
+            painter.setBrush(QBrush(QColor(0, 127, 127, 127)));
+
+            QRectF rect(selection->x, selection->y, selection->width, selection->height);
+            painter.drawRect(rect);
+        }
+    break;
+    case Points:
+        painter.setBrush(QBrush(lc));
+        painter.drawEllipse(QPointF(currentPoint.p.x, currentPoint.p.y), currentPoint.r, currentPoint.r);
+    break;
+    case Lines:
+
+        painter.setBrush(QBrush(lc));
+        painter.drawEllipse(QPointF(currentPoint.p.x, currentPoint.p.y), currentPoint.r, currentPoint.r);
+
+
+    break;
+
+    }
 
 }
 
+void Canvas::setMask(cv::Mat1b const& mask_) {
+    mask = mask_.clone();
+
+    undos.clear();
+    redos.clear();
+
+    currentLine.reset();
+
+    repaint();
+}
 
 
-QImage Canvas::save() {
-    QImage img(image.size(), QImage::Format_RGB32);
-    img.fill(QColor(255, 255, 255));
-
-    QPainter painter;
-    painter.begin(&img);
-
-    for(auto a : state->areas) {
-        drawAreaMask(a, &painter);
-    }
-
-    painter.end();
-
-    return img;
+cv::Mat1b Canvas::save() {
+    return mask;
 }
 
 void Canvas::setBrushWidth(int width) {
@@ -292,122 +307,48 @@ void Canvas::setBrushWidth(int width) {
 }
 
 void Canvas::cancel() {
+   selection.reset();
+   currentLine.reset();
 
-    if(currentArea.line.size()) {
-        run(cancelCmd());
-    }
+   drawing = false;
 
-    selection.reset();
+   repaint();
+}
 
+void Canvas::setMode(DrawMode mode_) {
+    cancel();
+    mode = mode_;
 }
 
 
 void Canvas::undo() {
+
+    cancel();
     if(undos.size()) {
-        Command c = undos.back();
+
+        redos.push_back(mask);
+        mask = undos.back();
 
         undos.pop_back();
-        redos.push_back(c);
-        undoCmd(c);
-
     }
+
+    repaint();
 }
 
 
 void Canvas::redo() {
+    cancel();
+
     if(redos.size()) {
-        Command c = redos.back();
+        undos.push_back(mask);
+        mask = redos.back();
 
         redos.pop_back();
-        undos.push_back(c);
-
-        applyCmd(c);
-    }
-}
-
-
-void Canvas::deleteSelection() {
-
-    std::vector<Deletion> deleted;
-
-    for(size_t i = 0; i < state->areas.size(); ++i) {
-        if(isSelected(state->areas[i])) {
-            Deletion d;
-            d.index = i;
-            d.a = state->areas[i];
-
-            deleted.push_back(d);
-        }
-    }
-
-    run(deleteCmd(deleted));
-}
-
-
-void Canvas::applyCmd(Command const& c) {
-    if(Draw const *d = boost::get<Draw>(&c)) {
-        currentArea.line.push_back(d->p);
-
-    } else if(End const *e = boost::get<End>(&c)) {
-        currentArea.line.push_back(e->p);
-
-        state->areas.push_back(currentArea);
-        currentArea.line.clear();
-
-    }else if(boost::get<Cancel>(&c)) {
-
-        state->areas.push_back(currentArea);
-        currentArea.line.clear();
-
-    } else if(Delete const *d = boost::get<Delete>(&c)) {
-
-        size_t count = 0;
-        for(Deletion const &del : d->deletes) {
-            state->areas.erase(state->areas.begin() + del.index - count);
-            count++;
-        }
-
     }
 
     repaint();
 }
 
-
-void Canvas::undoCmd(Command const& c) {
-    if(boost::get<Draw>(&c)) {
-        currentArea.line.pop_back();
-
-    } else if(boost::get<End>(&c)) {
-
-        currentArea = state->areas.back();
-        currentArea.line.pop_back();
-
-        state->areas.pop_back();
-    } else if(boost::get<Cancel>(&c)) {
-
-        currentArea = state->areas.back();
-        state->areas.pop_back();
-    } else if(Delete const *d = boost::get<Delete>(&c)) {
-
-        for(Deletion const &del : d->deletes) {
-            state->areas.insert(state->areas.begin() + del.index, del.a);
-        }
-
-    }
-
-    repaint();
-}
-
-
-
-
-void Canvas::run(Command const &c) {
-    redos.clear();
-    applyCmd(c);
-
-    undos.push_back(c);
-
-}
 
 
 

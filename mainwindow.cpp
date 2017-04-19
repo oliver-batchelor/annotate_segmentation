@@ -12,8 +12,11 @@
 #include <QJsonDocument>
 #include <QShortcut>
 #include <QDebug>
+#include <QActionGroup>
+
 #include <iostream>
-\
+
+#include <opencv2/imgcodecs.hpp>
 
 MainWindow::MainWindow(QDir const &path, QWidget *parent)
     : QMainWindow(parent),
@@ -23,14 +26,16 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent)
 
     ui->setupUi(this);
 
-    state = std::shared_ptr <State>(new State());
-    canvas = new Canvas(state);\
+    canvas = new Canvas();\
     ui->scrollArea->setWidget(canvas);
 
     connect(ui->scaleSlider, &QSlider::valueChanged, canvas, &Canvas::zoom);
     connect(ui->nextImage, &QPushButton::clicked, this, &MainWindow::nextImage);
 
     connect(ui->prevImage, &QPushButton::clicked, this, &MainWindow::prevImage);
+
+    connect(ui->discard, &QPushButton::clicked, this, &MainWindow::discardImage);
+
 
     connect(ui->action_Next, &QAction::triggered, this, &MainWindow::nextImage);
     connect(ui->action_Prev, &QAction::triggered, this, &MainWindow::prevImage);
@@ -47,11 +52,25 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent)
 
     connect(new QShortcut(Qt::Key_Escape, canvas), &QShortcut::activated, canvas, &Canvas::cancel);
 
+
+    connect(ui->actionSelect, &QAction::triggered, canvas, &Canvas::setSelect);
+    connect(ui->actionPoints, &QAction::triggered, canvas, &Canvas::setPoints);
+    connect(ui->actionLines, &QAction::triggered, canvas, &Canvas::setLines);
+
+
+    QActionGroup *group = new QActionGroup(this);
+    group->addAction(ui->actionSelect);
+    group->addAction(ui->actionPoints);
+    group->addAction(ui->actionLines);
+
+    ui->actionLines->setChecked(true);
+    canvas->setMode(Lines);
+
     \
     config = std::shared_ptr<Config>(new Config());
-    config->labels = {"trunk"};
+    config->labels = {"background", "trunk"};
 
-    int label = 1;
+    int label = 0;
     for(std::string const& l : config->labels) {
         QListWidgetItem *item = new QListWidgetItem(l.c_str());
         item->setData(Qt::UserRole, QVariant(label++));
@@ -59,9 +78,10 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent)
     }
 
     ui->labelList->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->labelList->setCurrentRow(0);
+    connect(ui->labelList, &QListWidget::currentRowChanged, canvas, &Canvas::setLabel);
 
-    canvas->setLabel(1);
+    ui->labelList->setCurrentRow(1);
+
 
 
     nextImage();
@@ -71,9 +91,8 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
 
    size_t number = event->key() - '0';
    if(number >= 1 && number <= config->labels.size()) {
-      int label = number;
-      ui->labelList->setCurrentRow(label - 1);
-
+      int label = number - 1;
+      ui->labelList->setCurrentRow(label);
       canvas->setLabel(label);
    }
 
@@ -108,79 +127,6 @@ void MainWindow::keyReleaseEvent(QKeyEvent *e) {
 }
 
 
-Point readPoint(const QJsonObject &json)
-{
-    QPointF p(json["x"].toDouble(), json["y"].toDouble());
-    return Point(p, json["r"].toDouble());
-}
-
-QJsonObject writePoint(Point const& p) {
-    QJsonObject obj;
-
-    obj["x"] = p.p.x();
-    obj["y"] = p.p.y();
-    obj["r"] = p.r;
-
-    return obj;
-}
-
-Area readArea(const QJsonObject &json) {
-    Area a;
-    a.label = json["label"].toInt();
-
-    QJsonArray arr = json["line"].toArray();
-    for(QJsonValue const &v : arr) {
-        a.line.push_back(readPoint(v.toObject()));
-    }
-
-    return a;
-}
-
-QJsonObject writeArea(Area const& a) {
-    QJsonObject json;
-
-    json["label"] = a.label;
-
-    QJsonArray arr;
-    for(Point const &p : a.line) {
-        arr.append(writePoint(p));
-    }
-    json["line"] = arr;
-
-    return json;
-}
-
-
-State readState(const QJsonDocument &doc) {
-    State s;
-
-    QJsonObject json = doc.object();
-    s.filename = json["filename"].toString();
-
-    QJsonArray arr = json["areas"].toArray();
-    for(QJsonValue const &v : arr) {
-        s.areas.push_back(readArea(v.toObject()));
-    }
-
-    return s;
-}
-
-QJsonDocument writeState(State const& s) {
-    QJsonObject json;
-
-    json["filename"] = s.filename;
-
-    QJsonArray arr;
-    for(Area const &a : s.areas) {
-        arr.append(writeArea(a));
-    }
-    json["areas"] = arr;
-
-    return QJsonDocument(json);
-}
-
-
-
 
 QString replaceExt(QString const &path, QString const &ext) {
     QFileInfo info(path);
@@ -193,21 +139,17 @@ bool MainWindow::loadImage(QString const &path) {
 
     QPixmap p;
     if(p.load(path)) {
-        state->areas.clear();
-        state->filename = path;
+        filename = path;
 
-        QFileInfo annot(path + ".json");
-        if(annot.isFile() && annot.isReadable()) {
-            QFile file(annot.absoluteFilePath());
-            file.open(QIODevice::ReadOnly);
+        std::string maskPath = (path + ".mask").toStdString();
+        cv::Mat mask = cv::imread(maskPath);
 
-            QByteArray saveData = file.readAll();
-            State s = readState(QJsonDocument::fromJson(saveData));
-            state->areas = s.areas;
-        }
+        std::vector<cv::Mat> channels;
+        cv::split(mask, channels);
 
         setWindowTitle(path);
-        canvas->setImage(p);
+        canvas->setImage(p, channels[0]);
+
 
         return true;
     }
@@ -217,22 +159,30 @@ bool MainWindow::loadImage(QString const &path) {
 
 
 void MainWindow::save() {
-    if(currentEntry && state->areas.size() && canvas->isModified()) {
-        QFileInfo annot(currentEntry->absoluteFilePath() + ".json");
+    if(currentEntry && canvas->isModified()) {
         QFileInfo labels(currentEntry->absoluteFilePath() + ".mask");
 
-        qDebug() << annot.absoluteFilePath();
+        cv::Mat1b mask = canvas->save();
+        cv::imwrite(labels.absoluteFilePath().toStdString(), mask);
 
-        QFile file(annot.absoluteFilePath());
-        file.open(QIODevice::WriteOnly);
-
-        file.write(writeState(*state).toJson());
-
-        QImage mask = canvas->save();
-        mask.save(labels.absoluteFilePath(), "png");
     }
 }
 
+
+void MainWindow::discardImage() {
+
+    if(currentEntry) {
+        QFile file(currentEntry->absoluteFilePath());
+        QFile annot(currentEntry->absoluteFilePath() + ".json");
+        QFile labels(currentEntry->absoluteFilePath() + ".mask");
+
+        file.remove();
+        annot.remove();
+        labels.remove();
+
+        loadNext(false);
+    }
+}
 
 void MainWindow::nextImage() {
     save();
@@ -262,7 +212,7 @@ void MainWindow::loadNext(bool reverse) {
         QFileInfo const &e = entries[i];
 
         QString name = e.filePath();
-        QFileInfo annot (replaceExt(e.absoluteFilePath(), ".json"));
+        QFileInfo annot (e.absoluteFilePath() + ".json");
 
         if(ui->freshImage->isChecked() && annot.exists())
             continue;

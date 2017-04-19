@@ -72,12 +72,19 @@
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <item>
+       <widget class="QPushButton" name="discard">
+        <property name="text">
+         <string>Discard</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QSlider" name="scaleSlider">
         <property name="minimum">
          <number>10</number>
         </property>
         <property name="maximum">
-         <number>200</number>
+         <number>400</number>
         </property>
         <property name="value">
          <number>100</number>
@@ -161,6 +168,9 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
+   <addaction name="actionSelect"/>
+   <addaction name="actionPoints"/>
+   <addaction name="actionLines"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="action_Next">
@@ -242,6 +252,30 @@
    </property>
    <property name="menuRole">
     <enum>QAction::ApplicationSpecificRole</enum>
+   </property>
+  </action>
+  <action name="actionSelect">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Select</string>
+   </property>
+  </action>
+  <action name="actionPoints">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Points</string>
+   </property>
+  </action>
+  <action name="actionLines">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Lines</string>
    </property>
   </action>
  </widget>

@@ -6,34 +6,16 @@
 #include <QLine>
 #include <QString>
 
-
+#include "opencv2/core.hpp"
 
 struct Point {
-    Point(QPointF const &p, float r)
+    Point(cv::Point2f const &p, float r)
         : p(p), r(r) {}
     Point() : r(1.0f) {}
 
-    QPointF p;
+    cv::Point2f p;
     float r;
 };
-
-struct Area {
-    Area(int label = 0) : label(label) {}
-
-    std::vector<Point> line;
-    int label;
-};
-
-class State
-{
-public:
-    State() {}
-
-
-    QString filename;
-    std::vector<Area> areas;
-};
-
 
 
 

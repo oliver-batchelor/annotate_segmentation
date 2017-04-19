@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QDir>
+#include <QListWidget>
 
 #include <boost/optional.hpp>
 #include <memory>
@@ -27,6 +28,7 @@ protected slots:
 
     void nextImage();
     void prevImage();
+    void discardImage();
 
 
 protected:
@@ -45,8 +47,10 @@ private:
 
     Ui::MainWindow *ui;
 
-    std::shared_ptr<State> state;
+
     std::shared_ptr<Config>  config;
+    QString filename;
+
     Canvas *canvas;
 
     QDir path;
