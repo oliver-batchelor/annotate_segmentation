@@ -286,14 +286,12 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
 }
 
 void Canvas::setMask(cv::Mat1b const& mask_) {
-    mask = mask_.clone();
+    if(mask_.cols == image.width() && mask_.rows == image.height()) {
+        snapshot();
+        mask = mask_.clone();
+    }
 
-    undos.clear();
-    redos.clear();
-
-    currentLine.reset();
-
-    repaint();
+    cancel();
 }
 
 

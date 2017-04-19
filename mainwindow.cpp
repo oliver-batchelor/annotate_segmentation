@@ -13,6 +13,7 @@
 #include <QShortcut>
 #include <QDebug>
 #include <QActionGroup>
+#include <QProcess>
 
 #include <iostream>
 
@@ -56,6 +57,8 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent)
     connect(ui->actionSelect, &QAction::triggered, canvas, &Canvas::setSelect);
     connect(ui->actionPoints, &QAction::triggered, canvas, &Canvas::setPoints);
     connect(ui->actionLines, &QAction::triggered, canvas, &Canvas::setLines);
+
+    connect(ui->actionRun, &QAction::triggered, this, &MainWindow::runClassifier);
 
 
     QActionGroup *group = new QActionGroup(this);
@@ -133,6 +136,19 @@ QString replaceExt(QString const &path, QString const &ext) {
     return QString (info.path() + "/" + info.completeBaseName() + ext);
 }
 
+inline cv::Mat1b loadMask(std::string const &path) {
+    cv::Mat mask = cv::imread(path);
+
+    if(mask.channels() > 1) {
+        std::vector<cv::Mat> channels;
+        cv::split(mask, channels);
+
+        mask = channels[0];
+    }
+
+    return mask;
+}
+
 bool MainWindow::loadImage(QString const &path) {
 
     std::cout << "loading: " << path.toStdString() << std::endl;
@@ -142,13 +158,10 @@ bool MainWindow::loadImage(QString const &path) {
         filename = path;
 
         std::string maskPath = (path + ".mask").toStdString();
-        cv::Mat mask = cv::imread(maskPath);
-
-        std::vector<cv::Mat> channels;
-        cv::split(mask, channels);
+        cv::Mat1b mask = loadMask(maskPath);
 
         setWindowTitle(path);
-        canvas->setImage(p, channels[0]);
+        canvas->setImage(p, mask);
 
 
         return true;
@@ -160,10 +173,16 @@ bool MainWindow::loadImage(QString const &path) {
 
 void MainWindow::save() {
     if(currentEntry && canvas->isModified()) {
-        QFileInfo labels(currentEntry->absoluteFilePath() + ".mask");
+        QString temp = QDir::tempPath() + "/mask.png";
+        QString labels = currentEntry->absoluteFilePath() + ".mask";
 
         cv::Mat1b mask = canvas->save();
-        cv::imwrite(labels.absoluteFilePath().toStdString(), mask);
+        cv::imwrite(temp.toStdString(), mask);
+
+        std::cout << temp.toStdString() << std::endl;
+        QFile::copy(temp, labels);
+
+        std::cout << "Writing " << labels.toStdString() << std::endl;
 
     }
 }
@@ -192,6 +211,22 @@ void MainWindow::nextImage() {
 void MainWindow::prevImage() {
     save();
     loadNext(true);
+}
+
+void MainWindow::runClassifier() {
+    QProcess p;
+    p.setWorkingDirectory("../segmenter");
+    p.setProgram("python3.5");
+
+    QString maskFile = QDir::currentPath() + "/.mask.png";
+    p.setArguments({"test.py", filename, "--save", maskFile});
+
+    p.start();
+
+    p.waitForFinished();
+
+    cv::Mat1b mask = loadMask(maskFile.toStdString());
+    canvas->setMask(mask);
 }
 
 void MainWindow::loadNext(bool reverse) {

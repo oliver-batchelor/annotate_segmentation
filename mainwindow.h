@@ -30,6 +30,8 @@ protected slots:
     void prevImage();
     void discardImage();
 
+    void runClassifier();
+
 
 protected:
 

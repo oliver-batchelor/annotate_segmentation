@@ -171,6 +171,8 @@
    <addaction name="actionSelect"/>
    <addaction name="actionPoints"/>
    <addaction name="actionLines"/>
+   <addaction name="separator"/>
+   <addaction name="actionRun"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="action_Next">
@@ -276,6 +278,11 @@
    </property>
    <property name="text">
     <string>Lines</string>
+   </property>
+  </action>
+  <action name="actionRun">
+   <property name="text">
+    <string>Run classifier</string>
    </property>
   </action>
  </widget>
