@@ -176,11 +176,13 @@ void MainWindow::save() {
         QString temp = QDir::tempPath() + "/mask.png";
         QString labels = currentEntry->absoluteFilePath() + ".mask";
 
-        cv::Mat1b mask = canvas->save();
+        cv::Mat1b mask = canvas->getMask();
         cv::imwrite(temp.toStdString(), mask);
 
         std::cout << temp.toStdString() << std::endl;
-        QFile::copy(temp, labels);
+
+        QFile::remove(labels);
+        QFile::rename(temp, labels);
 
         std::cout << "Writing " << labels.toStdString() << std::endl;
 
@@ -247,9 +249,12 @@ void MainWindow::loadNext(bool reverse) {
         QFileInfo const &e = entries[i];
 
         QString name = e.filePath();
-        QFileInfo annot (e.absoluteFilePath() + ".json");
+        QFileInfo annot (e.absoluteFilePath() + ".mask");
 
         if(ui->freshImage->isChecked() && annot.exists())
+            continue;
+
+        if(!ui->freshImage->isChecked() && !annot.exists())
             continue;
 
         QPixmap p;

@@ -295,9 +295,7 @@ void Canvas::setMask(cv::Mat1b const& mask_) {
 }
 
 
-cv::Mat1b Canvas::save() {
-    return mask;
-}
+
 
 void Canvas::setBrushWidth(int width) {
     currentPoint.r = width;

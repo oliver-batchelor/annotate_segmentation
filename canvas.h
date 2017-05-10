@@ -27,7 +27,7 @@ public:
     void setImage(QPixmap const& p,  cv::Mat1b mask = cv::Mat1b());
     void setMask(cv::Mat1b const& mask);
 
-    cv::Mat1b save();
+    cv::Mat1b getMask() const { return mask; }
 
     bool isModified() { return undos.size() || redos.size(); }
 
