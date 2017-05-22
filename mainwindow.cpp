@@ -14,6 +14,7 @@
 #include <QDebug>
 #include <QActionGroup>
 #include <QProcess>
+#include <QMessageBox>
 
 #include <iostream>
 
@@ -206,11 +207,12 @@ void MainWindow::discardImage() {
 }
 
 void MainWindow::nextImage() {
-    save();
+    if(ui->saveImage->isChecked()) save();
     loadNext(false);
 }
 
 void MainWindow::prevImage() {
+    if(ui->saveImage->isChecked()) save();
     save();
     loadNext(true);
 }
@@ -221,14 +223,21 @@ void MainWindow::runClassifier() {
     p.setProgram("python3.5");
 
     QString maskFile = QDir::currentPath() + "/.mask.png";
+    QFile::remove(maskFile);
+
     p.setArguments({"test.py", filename, "--save", maskFile});
 
     p.start();
-
     p.waitForFinished();
 
-    cv::Mat1b mask = loadMask(maskFile.toStdString());
-    canvas->setMask(mask);
+    if(p.exitCode() == 0) {
+
+        cv::Mat1b mask = loadMask(maskFile.toStdString());
+        canvas->setMask(mask);
+    } else {
+        QString perr = p.readAllStandardError();
+        QMessageBox::critical(this, "Classifier", perr);
+    }
 }
 
 void MainWindow::loadNext(bool reverse) {
