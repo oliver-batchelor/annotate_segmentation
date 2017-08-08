@@ -115,7 +115,9 @@ private:
     boost::optional<cv::Point2f> selecting;
 
     cv::Mat3b image;
+
     cv::Mat1b overlay;
+    cv::Mat1i spLabels;
 
     QPixmap scaled;
 

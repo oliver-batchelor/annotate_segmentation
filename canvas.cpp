@@ -124,6 +124,16 @@ inline void drawPoint(cv::Mat1b &image, Point const &p, int label) {
 }
 
 
+inline void drawSP(cv::Mat1b &image, cv::Mat1i const& spLabels, Point const &p, int label) {
+    cv::Point p1 = p.p;
+
+    int spLabel = spLabels(p1.y, p1.x);
+
+    cv::Mat1b mask = spLabels == spLabel;
+    image.setTo(label, mask);
+}
+
+
 
 inline void floodFill(cv::Mat1b &image, Point const &p, int label) {
     cv::Scalar c(label, label, label);
@@ -191,6 +201,13 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
 
     break;
 
+    case SuperPixels:
+        snapshot();
+
+        currentPoint.p = p;
+        drawSP(mask, spLabels, currentPoint, currentLabel);
+
+        drawing = true;
     default:
     break;
     }
@@ -248,6 +265,12 @@ void Canvas::mouseMove(QMouseEvent *event) {
 
         }
     break;
+    case SuperPixels:
+        if(drawing) {
+            drawSP(mask, spLabels, currentPoint, currentLabel);
+        }
+    break;
+
     default: break;
     }
 
@@ -376,6 +399,7 @@ void Canvas::cancel() {
 void Canvas::genOverlay() {
     using namespace cv::ximgproc;
     overlay = cv::Mat1b();
+    spLabels = cv::Mat1b();
 
     if(!image.empty() && mode == SuperPixels) {
 
@@ -394,7 +418,9 @@ void Canvas::genOverlay() {
 //        sp->iterate(4);
 
 
-        sp->getLabelContourMask(overlay);
+        sp->getLabelContourMask(overlay);\
+        sp->getLabels(spLabels);
+
         cv::bitwise_not(overlay, overlay);
     }
 
