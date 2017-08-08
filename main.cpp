@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
     }
 
 
+
     std::cout << "Annotating images in path: " << path.canonicalPath().toStdString()  << std::endl;
 
     MainWindow w(path);

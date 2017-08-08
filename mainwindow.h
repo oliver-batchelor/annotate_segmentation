@@ -31,15 +31,19 @@ protected slots:
     void discardImage();
 
     void runClassifier();
+    void setLabel(int label);
+
 
 
 protected:
 
-    void save();
+    bool save();
     void loadNext(bool reverse = false);
 
     virtual void keyPressEvent(QKeyEvent *event);   
     virtual void keyReleaseEvent(QKeyEvent *e);
+
+    virtual void closeEvent(QCloseEvent *e);
 
     bool loadImage(QString const &path);
 

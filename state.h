@@ -18,12 +18,22 @@ struct Point {
 };
 
 
+struct Label {
+    Label(std::string name, int value) :
+        name(name), value(value) {}
+
+    Label() : value(0) {}
+
+    std::string name;
+    int value;
+
+};
 
 
 class Config {
 public:
 
-    std::vector<std::string> labels;
+    std::vector<Label> labels;
 };
 
 #endif // STATE_H

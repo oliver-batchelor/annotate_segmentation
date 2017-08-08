@@ -1,0 +1,10 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/select-rectangular.png</file>
+        <file>icons/draw-brush.png</file>
+        <file>icons/draw-ellipse.png</file>
+        <file>icons/draw-path.png</file>
+        <file>icons/fill-color.png</file>
+        <file>icons/pixelart-trace.svg</file>
+    </qresource>
+</RCC>
