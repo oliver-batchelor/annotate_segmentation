@@ -22,37 +22,70 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 
+inline QColor toColor(QJsonValue const &v) {
+    auto c = v.toArray();
+    return QColor(c[0].toInt(), c[1].toInt(), c[2].toInt(), c[3].toInt());
+}
 
-std::vector<Label> readClasses(std::string const &path) {
+inline OptionalFileInfo findNext(QString const& path, Image& image, OptionalFileInfo const& current=OptionalFileInfo(), bool reverse=false, bool fresh=false);
+inline cv::Mat1b loadMask(std::string const &path);
 
-    std::ifstream in(path);
-    assert(in.is_open() && "could not open classes.txt");
 
-    std::vector<Label> classes;
+inline std::shared_ptr<Config> loadConfig(QJsonObject const &root) {
 
-    int n = 0;
-    std::string line;
-    while (std::getline(in, line)) {
-        classes.push_back(Label(line, n++));
+    std::shared_ptr<Config> config (new Config());
+    QJsonArray classes = root["classes"].toArray();
+
+    auto ignore = root["ignored"].toObject();
+
+    config->ignore_color = toColor(ignore["color"]);
+    config->ignore_label = ignore["id"].toInt();
+
+    config->default_label = root.contains("default") ? root["default"].toInt() : 0;
+
+    for (int i = 0; i < classes.size(); ++i) {
+        auto c = classes[i].toObject();
+
+        Label label(c["name"].toString().toStdString(), i, toColor(c["color"]));
+        config->labels.push_back(label);
     }
 
-    return classes;
+    return config;
 }
 
 
-MainWindow::MainWindow(QDir const &path, QWidget *parent)
+std::shared_ptr<Config> readConfig(QString const &path) {
+
+    std::shared_ptr<Config> config;;
+    QFile file(path);
+
+    std::cout << path.toStdString() << std::endl;
+
+    if (file.open(QIODevice::ReadOnly)) {
+
+        QByteArray data = file.readAll();
+        QJsonDocument doc(QJsonDocument::fromJson(data));
+        return loadConfig(doc.object());
+    }
+
+    return config;
+}
+
+
+MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
-    ui(new Ui::MainWindow),
-    path(path)
+    ui(new Ui::MainWindow)
 {
 
     ui->setupUi(this);
 
     canvas = new Canvas();
+    ui->scrollArea->setEnabled(false);
     ui->scrollArea->setWidget(canvas);
 
-    connect(ui->actionZoomIn, &QAction::triggered, canvas, &Canvas::zoomIn);
+
     connect(ui->actionZoomOut, &QAction::triggered, canvas, &Canvas::zoomOut);
+    connect(ui->actionZoomIn, &QAction::triggered, canvas, &Canvas::zoomIn);
 
     connect(ui->actionDiscard, &QAction::triggered, this, &MainWindow::discardImage);
 
@@ -67,7 +100,8 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent)
     connect(new QShortcut(ui->action_Redo->shortcut(), canvas), &QShortcut::activated, canvas, &Canvas::redo);
 
     connect(ui->action_Delete, &QAction::triggered, canvas, &Canvas::deleteSelection);
-    connect(new QShortcut(ui->action_Delete->shortcut(), canvas), &QShortcut::activated, canvas, &Canvas::deleteSelection);
+//    connect(new QShortcut(ui->action_Delete->shortcut(), canvas), &QShortcut::activated, canvas, &Canvas::deleteSelection);
+
     connect(new QShortcut(Qt::Key_Escape, canvas), &QShortcut::activated, canvas, &Canvas::cancel);
 
 
@@ -76,18 +110,38 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent)
     connect(ui->actionLines, &QAction::triggered, canvas, &Canvas::setLines);
     connect(ui->actionFill, &QAction::triggered, canvas, &Canvas::setFill);
     connect(ui->actionSuperPixels, &QAction::triggered, canvas, &Canvas::setSuperPixels);
+    connect(ui->actionPolygons, &QAction::triggered, canvas, &Canvas::setPolygons);
+
 
     connect(ui->actionRun, &QAction::triggered, this, &MainWindow::runClassifier);
+    connect(ui->actionGrabCut, &QAction::triggered, this, &MainWindow::runGrabCut);
 
-    connect(ui->brushWidth, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), canvas, &Canvas::setBrushWidth);
-    connect(canvas, &Canvas::brushWidthChanged, ui->brushWidth, &QSpinBox::setValue);
 
-    connect(ui->spSize, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), canvas, &Canvas::setSPSize);
-    connect(ui->spSmoothness, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), canvas, &Canvas::setSPSmoothness);
+    connect(ui->brushWidth, &QSlider::valueChanged, canvas, &Canvas::setBrushWidth);
+    connect(ui->labelIntensity, &QSlider::valueChanged, canvas, &Canvas::setLabelIntensity);
+
+
+    connect(canvas, &Canvas::brushWidthChanged, ui->brushWidth, &QSlider::setValue);
+
+    connect(ui->spSize, &QSlider::valueChanged, canvas, &Canvas::setSPSize);
+    connect(ui->spSmoothness, &QSlider::valueChanged, canvas, &Canvas::setSPSmoothness);
+    connect(ui->spOpacity, &QSlider::valueChanged, canvas, &Canvas::setSPOpacity);
+
+
 
     canvas->setSPSize(ui->spSize->value());
     canvas->setSPSmoothness(ui->spSmoothness->value());
+    canvas->setSPOpacity(ui->spOpacity->value());
 
+    canvas->setLabelIntensity(ui->labelIntensity->value());
+    canvas->setBrushWidth(ui->brushWidth->value());
+
+
+
+    ui->labelList->setSelectionMode(QAbstractItemView::SingleSelection);
+    connect(ui->labelList, &QListWidget::currentRowChanged, this, &MainWindow::setLabel);
+
+    ui->labelList->setFocusPolicy(Qt::NoFocus);
 
     QActionGroup *group = new QActionGroup(this);
     group->addAction(ui->actionSelect);
@@ -98,54 +152,92 @@ MainWindow::MainWindow(QDir const &path, QWidget *parent)
 
     ui->actionPoints->setChecked(true);
     canvas->setMode(Points);
+}
 
-    config = std::shared_ptr<Config>(new Config());
-    config->labels = readClasses((path.path() + "/classes.txt").toStdString());
+inline QListWidgetItem *makeLabel(Label const &label) {
 
-    config->labels.push_back(Label("ignored", 255));
+    QPixmap p(16, 16);
+    p.fill(label.color);
 
-    for(auto& label: config->labels) {
-        QListWidgetItem *item = new QListWidgetItem(label.name.c_str());
-        item->setData(Qt::UserRole, QVariant(label.value));
-        ui->labelList->addItem(item);
+    QListWidgetItem *item = new QListWidgetItem(label.name.c_str());
+    item->setData(Qt::UserRole, QVariant(label.value));
+    item->setIcon(QIcon(p));
+
+    return item;
+}
+
+bool MainWindow::open(QString const &path) {
+
+    auto newConfig = readConfig(path + "/config.json");
+    if(!newConfig) newConfig = readConfig(path + "/../config.json");
+
+    if(!newConfig) {
+        QMessageBox::warning(this, "Open", "Could not find config file in directory (or parent): " + path);
+        return false;
     }
 
-    ui->labelList->setSelectionMode(QAbstractItemView::SingleSelection);
-    connect(ui->labelList, &QListWidget::currentRowChanged, this, &MainWindow::setLabel);
+    Image image;
+    OptionalFileInfo next = findNext(path, image, OptionalFileInfo(), false, ui->actionFresh->isChecked());
+    if(!next) next = findNext(path, image, OptionalFileInfo(), false, !ui->actionFresh->isChecked());
+
+
+    if(!next) {
+        QMessageBox::warning(this, "Open", "No valid images found in: " + path);
+        return false;
+    }
+
+    config = newConfig;
+    currentPath = path;
+    currentEntry = next;
+
+    ui->labelList->clear();
+
+    for(auto& label: config->labels)
+        ui->labelList->addItem(makeLabel(label));
+
+    Label ignoreLabel("ignored", config->ignore_label, config->ignore_color);
+    ui->labelList->addItem(makeLabel(ignoreLabel));
+
 
     ui->labelList->setCurrentRow(0);
-    nextImage();
+    canvas->setConfig(*config);
+    canvas->setImage(image);
+    this->setWindowTitle(next->fileName());
 
-    if(!currentEntry) {
-        ui->actionFresh->setChecked(true);
-        nextImage();
-    }
 
+    ui->scrollArea->setEnabled(true);
+
+
+    return true;
 }
 
 
 void MainWindow::setLabel(int label) {
-    assert(label < int(config->labels.size()) && "label out of range");
-    canvas->setLabel(config->labels[label].value);
+    if(label < int(config->labels.size())) {
+        canvas->setLabel(config->labels[label].value);
+    } else {
+        canvas->setLabel(config->ignore_label);
+    }
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event) {
 
-   size_t number = event->key() - '0';
-   if(number >= 1 && number < config->labels.size()) {
-      std::cout << "asdfasdfafds" << number << std::endl;
+   if(config) {
+       int number = event->key() - '1';
 
-      int label = number - 1;
-      ui->labelList->setCurrentRow(label);
+       if(number >= 0 && number < int(config->labels.size())) {
 
-      canvas->setLabel(config->labels[label].value);
-   }
+          int label = number;
+          ui->labelList->setCurrentRow(label);
 
-   if(number == 0) {
-       ui->labelList->setCurrentRow(config->labels.size() - 1);
-       canvas->setLabel(config->labels.back().value);
-   }
+          canvas->setLabel(config->labels[label].value);
+       }
 
+       if(number == -1) {
+           ui->labelList->setCurrentRow(config->labels.size());
+           canvas->setLabel(config->ignore_label);
+       }
+    }
 
 
    if(event->key() == Qt::Key_Shift) {
@@ -179,45 +271,10 @@ QString replaceExt(QString const &path, QString const &ext) {
     return QString (info.path() + "/" + info.completeBaseName() + ext);
 }
 
-inline cv::Mat1b loadMask(std::string const &path) {
-    cv::Mat mask = cv::imread(path);
-
-    if(mask.channels() > 1) {
-        std::vector<cv::Mat> channels;
-        cv::split(mask, channels);
-
-        mask = channels[0];
-    }
-
-    return mask;
-}
-
-bool MainWindow::loadImage(QString const &path) {
-
-    std::cout << "loading: " << path.toStdString() << std::endl;
-    cv::Mat3b image = cv::imread(path.toStdString(), cv::IMREAD_COLOR);
-
-
-    if(!image.empty()) {
-        cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
-
-        filename = path;
-
-        std::string maskPath = (path + ".mask").toStdString();
-        cv::Mat1b mask = loadMask(maskPath);
-
-        setWindowTitle(path);
-        canvas->setImage(image, mask);
-
-        return true;
-    }
-
-    return false;
-}
 
 
 bool MainWindow::save() {
-    if(currentEntry && canvas->isModified()) {
+    if(currentEntry /*&& canvas->isModified()*/) {
 
 
         if(!ui->actionAlwaysSave->isChecked()) {
@@ -233,17 +290,40 @@ bool MainWindow::save() {
 
 
         QString temp = QDir::tempPath() + "/mask.png";
-        QString labels = currentEntry->absoluteFilePath() + ".mask";
+        QString labelFile = currentEntry->absoluteFilePath() + ".mask";
+
+
 
         cv::Mat1b mask = canvas->getMask();
         cv::imwrite(temp.toStdString(), mask);
 
         std::cout << temp.toStdString() << std::endl;
 
-        QFile::remove(labels);
-        QFile::rename(temp, labels);
 
-        std::cout << "Writing " << labels.toStdString() << std::endl;
+        QFile::remove(labelFile);
+        QFile::rename(temp, labelFile);
+
+        std::vector<Event> log = canvas->getLog();
+        QJsonArray events;
+
+        for (auto const &e : log) {
+            QJsonObject obj;
+            obj["time"] = e.time;
+            obj["event"] = QString(e.event.c_str());
+
+            events.append(obj);
+        }
+
+        QJsonDocument doc(events);
+        QFile logFile (currentEntry->absoluteFilePath() + ".log");
+
+        if (logFile.open(QIODevice::WriteOnly)) {
+            logFile.write(doc.toJson());
+         }
+
+
+
+        std::cout << "Writing " << labelFile.toStdString() << std::endl;
     }
 
     return true;
@@ -275,10 +355,16 @@ void MainWindow::prevImage() {
     if(save()) loadNext(true);
 }
 
+void MainWindow::runGrabCut() {
+    canvas->grabCut();
+
+}
+
+
 void MainWindow::runClassifier() {
     QProcess p;
     p.setWorkingDirectory("../segmenter");
-    p.setProgram("python3.5");
+    p.setProgram("python3");
 
     QString maskFile = QDir::currentPath() + "/.mask.png";
     QFile::remove(maskFile);
@@ -300,20 +386,74 @@ void MainWindow::runClassifier() {
 
 
 
+inline cv::Mat1b loadMask(std::string const &path) {
+    cv::Mat mask = cv::imread(path);
+
+    if(mask.channels() > 1) {
+        std::vector<cv::Mat> channels;
+        cv::split(mask, channels);
+
+        mask = channels[0];
+    }
+
+    return mask;
+}
 
 
-void MainWindow::loadNext(bool reverse) {
 
+inline bool loadImage(QString const &path, Image &image) {
+
+    std::cout << "loading: " << path.toStdString() << std::endl;
+    image.image = cv::imread(path.toStdString(), cv::IMREAD_COLOR);
+
+    if(!image.image.empty()) {
+        cv::cvtColor(image.image, image.image, cv::COLOR_BGR2RGB);
+
+        QDir modelDir(path + ".model");
+        if(modelDir.exists()) {
+            std::string maskPath = (modelDir.path() + "/predictions.png").toStdString();
+            image.predictions = loadMask(maskPath);
+
+            int i = 0;
+            while(true) {
+                std::ostringstream probPath;
+                probPath << modelDir.path().toStdString() << "/class" << i++ << ".jpg";
+
+
+                cv::Mat1b prob = cv::imread(probPath.str(), cv::IMREAD_GRAYSCALE);
+                if(!prob.empty()) {
+                    image.probs.push_back(prob);
+                } else {
+                    break;
+                }
+            }
+        }
+
+
+        std::string maskPath = (path + ".mask").toStdString();
+        cv::Mat1b labels = loadMask(maskPath);
+        image.labels = annotated;
+
+        return true;
+    }
+
+
+
+    return false;
+}
+
+inline OptionalFileInfo findNext(QString const& path, Image& image, OptionalFileInfo const& current, bool reverse, bool fresh) {
     QStringList filters;
     filters << "*.png" << "*.jpg" << "*.PNG" << "*.jpeg" << "*.JPG" << "*.JPEG";
 
+    QDir dir(path);
 
-    QFileInfoList entries = path.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
+    QFileInfoList entries = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
     if(reverse) std::reverse(entries.begin(), entries.end());
     int i = 0;
 
-    if(currentEntry) {
-        i = entries.indexOf(*currentEntry) + 1;
+    if(current) {
+        i = entries.indexOf(*current) + 1;
     }
 
     for(; i < entries.size(); ++i) {
@@ -322,20 +462,33 @@ void MainWindow::loadNext(bool reverse) {
         QString name = e.filePath();
         QFileInfo annot (e.absoluteFilePath() + ".mask");
 
-        if(ui->actionFresh->isChecked() && annot.exists())
-            continue;
+//        if(fresh && annot.exists())
+//            continue;
 
-        if(!ui->actionFresh->isChecked() && !annot.exists())
-            continue;
+//        if(!fresh && !annot.exists())
+//            continue;
 
         QPixmap p;
-        if(loadImage(name)) {
-            currentEntry = e;
-            return;
+        if(loadImage(name, image)) {
+            return e;
         }
     }
 
-    currentEntry.reset();
+    return boost::optional<QFileInfo>();
+}
+
+
+bool MainWindow::loadNext(bool reverse) {
+
+    Image loaded;
+    auto next = findNext(currentPath, loaded, currentEntry, reverse, ui->actionFresh->isChecked());
+    if(next) {
+        this->setWindowTitle(next->fileName());
+        canvas->setImage(loaded);
+        currentEntry = next;
+    }
+
+    return bool(next);
 }
 
 

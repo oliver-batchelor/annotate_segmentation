@@ -14,23 +14,29 @@ namespace Ui {
 class MainWindow;
 }
 
+
+typedef boost::optional<QFileInfo> OptionalFileInfo;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    explicit MainWindow(QDir const& path, QWidget *parent = 0);
+    explicit MainWindow(QWidget *parent = 0);
     inline bool hasImage() { return bool(currentEntry); }
 
     ~MainWindow();
 
+    bool open(QString const &path);
 protected slots:
+
 
     void nextImage();
     void prevImage();
     void discardImage();
 
     void runClassifier();
+    void runGrabCut();
+
     void setLabel(int label);
 
 
@@ -38,14 +44,12 @@ protected slots:
 protected:
 
     bool save();
-    void loadNext(bool reverse = false);
+    bool loadNext(bool reverse = false);
 
     virtual void keyPressEvent(QKeyEvent *event);   
     virtual void keyReleaseEvent(QKeyEvent *e);
 
     virtual void closeEvent(QCloseEvent *e);
-
-    bool loadImage(QString const &path);
 
 
 private:
@@ -59,7 +63,7 @@ private:
 
     Canvas *canvas;
 
-    QDir path;
+    QString currentPath;
     boost::optional<QFileInfo> currentEntry;
 };
 

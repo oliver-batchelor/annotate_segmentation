@@ -4,6 +4,7 @@
 
 #include <QWidget>
 #include <QTimer>
+#include <QTime>
 #include "state.h"
 
 #include <boost/optional.hpp>
@@ -16,9 +17,25 @@ enum DrawMode {
     Lines,
     Points,
     Fill,
-    SuperPixels
+    SuperPixels,
+    Polygons
 };
 
+
+struct Image {
+
+    cv::Mat3b image;
+    cv::Mat1b labels;
+    cv::Mat1b prediction;
+
+    std::vector<cv::Mat1b> probs;
+};
+
+struct Event {
+
+    float time;
+    std::string event;
+};
 
 class Canvas : public QWidget
 {
@@ -27,13 +44,35 @@ class Canvas : public QWidget
 public:
     Canvas();
 
-    void setImage(cv::Mat3b const &image, cv::Mat1b const &mask = cv::Mat1b());
+    void setConfig(Config const &c);
+
+    void setImage(Image const &image);
     void setMask(cv::Mat1b const& mask);
 
-    cv::Mat1b getMask() const { return mask; }
+
+    cv::Mat3b const& getImage() const { return image; }
+    cv::Mat1b const& getMask() const { return mask; }
 
     bool isModified() { return undos.size() || redos.size(); }
 
+
+    void resetLog() {
+        log.clear();
+        time.start();
+    }
+
+    void logEvent(std::string const &event) {
+
+        Event e;
+        e.time = float(time.elapsed()) / 1000.0f;
+        e.event = event;
+
+        log.push_back(e);
+    }
+
+    std::vector<Event> getLog() {
+        return log;
+    }
 
 public slots:
     void zoomIn();
@@ -45,21 +84,28 @@ public slots:
     void setBrushWidth(int width);
 
     void setMode(DrawMode mode);
+    void grabCut();
+
 
     void setSelect() { setMode(Selection); }\
     void setPoints() { setMode(Points); }
     void setLines() { setMode(Lines); }
     void setFill() { setMode(Fill); }
-    void setSuperPixels() { setMode(SuperPixels); }
 
-    void setSPSize(int n) {
-        spSize = n;
-        genOverlay();
+    void setSuperPixels(cv::Mat1b const &spLabels, cv::Mat1b const& overlay) {
+        overlay = boundaries;
+        spImage = spLabels;
+
+        setMode(SuperPixels);
     }
 
-    void setSPSmoothness(int n) {
-        spSmoothness = n;
-        genOverlay();
+
+    void setPolygons() { setMode(Polygons); }
+
+
+    void setSPOpacity(int n) {
+        spOpacity = n;
+        genScaledImage();
     }
 
     void undo();
@@ -95,16 +141,26 @@ protected:
     void genScaledImage();
     void genOverlay();
 
+    cv::Point2f getPosition(QMouseEvent *event);
+
+
 
 private:
     void mouseMove(QMouseEvent *event);
 
 
     boost::optional<Point> currentLine;
+    std::vector<cv::Point2f> currentPoly;
+
     Point currentPoint;
+
+    int defaultLabel;
+
 
     int currentLabel;
     float currentZoom;
+
+    float labelAlpha;
 
     cv::Mat1b mask;
 
@@ -114,6 +170,7 @@ private:
     boost::optional<cv::Rect2f> selection;
     boost::optional<cv::Point2f> selecting;
 
+    std::vector<cv::Mat1b> probs;
     cv::Mat3b image;
 
     cv::Mat1b overlay;
@@ -129,8 +186,12 @@ private:
 
     int spSize;
     int spSmoothness;
+    int spOpacity;
 
     QTimer *timer;
+    QTime time;
+
+    std::vector<Event> log;
 
 
 };

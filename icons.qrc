@@ -6,5 +6,7 @@
         <file>icons/draw-path.png</file>
         <file>icons/fill-color.png</file>
         <file>icons/pixelart-trace.svg</file>
+        <file>icons/draw-polygon.png</file>
+        <file>icons/draw-freehand.png</file>
     </qresource>
 </RCC>

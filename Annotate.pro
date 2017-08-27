@@ -15,15 +15,17 @@ TEMPLATE = app
 SOURCES += main.cpp\
         mainwindow.cpp \
     canvas.cpp \
-    state.cpp
+    state.cpp \
+    layer.cpp
 
 HEADERS  += mainwindow.h \
     canvas.h \
-    state.h
+    state.h \
+    layer.h
 
 FORMS    += mainwindow.ui
 
-CONFIG += c++11
+CONFIG += c++11 
 QMAKE_CXXFLAGS += --std=c++11 `pkg-config opencv --cflags`
 LIBS = `pkg-config --libs opencv`
 

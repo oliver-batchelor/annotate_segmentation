@@ -5,6 +5,8 @@
 #include <QImage>
 #include <QRgb>
 
+#include <set>
+
 #include <iostream>
 
 #include <opencv2/imgproc.hpp>
@@ -14,10 +16,9 @@ QVector<QRgb> makeColorTable();
 
 
 Canvas::Canvas()
-        : currentZoom(1.0f), mode(Lines), drawing(false), spSize(10), spSmoothness(3) {
+        : defaultLabel(0), currentZoom(1.0f), labelAlpha(0.3), mode(Lines), drawing(false), spSize(10), spSmoothness(3), spOpacity(50) {
     setMouseTracking(true);
     currentPoint.r = 20.0;
-
 
     colorTable = makeColorTable();
 
@@ -63,8 +64,13 @@ void Canvas::zoomOut() {
 void Canvas::genScaledImage() {
 
     if(!image.empty()) {
-        cv::Mat3b m;
-        image.copyTo(m, overlay);
+
+        cv::Mat3b m = image.clone();
+
+        if(!overlay.empty()) {
+            cv::cvtColor(overlay, m, cv::COLOR_GRAY2BGR);
+            cv::scaleAdd(m, -(spOpacity / 100.0), image, m);
+        }
 
         cv::Mat3b s(image.rows * currentZoom, image.cols * currentZoom);
 
@@ -88,18 +94,41 @@ void Canvas::zoom(float level) {
     resize(scaled.size());
 }
 
-void Canvas::setImage(cv::Mat3b const &image_, cv::Mat1b const& mask_) {
+inline QVector<QRgb> make_palette(Config const &c) {
+    QVector<QRgb> palette(256, c.ignore_color.rgba());
 
-    image = image_;
+    int i = 0;
+    for (Label const& l : c.labels) {
+        palette[i++] = l.color.rgba();
+    }
+
+    return palette;
+}
+
+
+void Canvas::setConfig(Config const &c) {
+    defaultLabel = c.default_label;
+    colorTable = make_palette(c);
+}
+
+
+
+
+
+void Canvas::setImage(Image const &i) {
+
+    image = i.image;
+    probs = i.probs;
+
     overlay = cv::Mat1b();
 
     genOverlay();
 
-    if(mask_.cols == image.cols && mask_.rows == image.rows) {
-        mask = mask_;
+    if(i.labels.cols == image.cols && i.labels.rows == image.rows) {
+        mask = i.labels;
     } else {
         mask = cv::Mat1b(image.rows, image.cols);
-        mask = 0;
+        mask = defaultLabel;
     }
 
     selecting.reset();
@@ -109,11 +138,12 @@ void Canvas::setImage(cv::Mat3b const &image_, cv::Mat1b const& mask_) {
     redos.clear();
 
     zoom(currentZoom);
+    resetLog();
 }
 
 void Canvas::setLabel(int label) {
     currentLabel = label;
-    //repaint();
+    repaint();
 }
 
 
@@ -123,14 +153,46 @@ inline void drawPoint(cv::Mat1b &image, Point const &p, int label) {
     cv::circle(image, cv::Point(p.p.x, p.p.y), p.r, c, -1);
 }
 
+inline void drawPoly(cv::Mat1b &image, std::vector<cv::Point2f> const &points, int label) {
+    cv::Scalar c(label, label, label);
+
+    std::vector<cv::Point> ps;
+    for(auto const& p : points) {
+        ps.push_back(p);
+    }
+
+
+    std::vector<std::vector<cv::Point>> pts = {ps};
+    cv::fillPoly(image, pts, c);
+
+}
 
 inline void drawSP(cv::Mat1b &image, cv::Mat1i const& spLabels, Point const &p, int label) {
-    cv::Point p1 = p.p;
 
-    int spLabel = spLabels(p1.y, p1.x);
+    cv::Point c = p.p;
+    int r = p.r;
 
-    cv::Mat1b mask = spLabels == spLabel;
-    image.setTo(label, mask);
+    std::set<int> labels;
+    for(int i = -p.r; i <= r; ++i) {
+        for(int j = -p.r; j <= r; ++j) {
+            if(i * i + j * j < r * r) {
+                int x = c.x + j;
+                int y = c.y + i;
+
+                if(y < spLabels.rows && x < spLabels.cols && x >= 0 && y >= 0) {
+                    int spLabel = spLabels(y, x);
+                    labels.insert(spLabel);
+                }
+            }
+        }
+    }
+
+
+
+    for (int l : labels) {
+        cv::Mat1b mask = spLabels == l;
+        image.setTo(label, mask);
+    }
 }
 
 
@@ -158,9 +220,21 @@ inline void drawLine(cv::Mat1b &image, Point const &start, Point const& end, int
 }
 
 
+inline cv::Point2f Canvas::getPosition(QMouseEvent *event) {
+
+    cv::Point2f p(event->x() / currentZoom, event->y() / currentZoom);
+    p.x = std::min<float>(p.x, image.cols - 1);
+    p.y = std::min<float>(p.y, image.rows - 1);
+
+    p.x = std::max<float>(p.x, 0.0f);
+    p.y = std::max<float>(p.y, 0.0f);
+
+    return p;
+}
 
 void Canvas::mousePressEvent(QMouseEvent *event) {
-    cv::Point2f p(event->x() / currentZoom, event->y() / currentZoom);
+    cv::Point2f p = getPosition(event);
+    logEvent("click");
 
     mouseMove(event);
 
@@ -168,6 +242,7 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
     case Selection:
         selection = cv::Rect2f(p, p);
         selecting = p;
+
     break;
     case Fill:
         snapshot();
@@ -183,9 +258,11 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
                     currentLine = currentPoint;
 
                 } else {
+                    logEvent("end_drawing");
                     currentLine.reset();
                 }
             } else {
+                logEvent("begin_drawing");
                 currentLine = currentPoint;
             }
 
@@ -197,9 +274,30 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
         currentPoint.p = p;
         drawPoint(mask, currentPoint, currentLabel);
 
+        logEvent("begin_drawing");
         drawing = true;
 
     break;
+
+    case Polygons:
+        if(event->button() == Qt::LeftButton) {
+            if(currentPoly.empty())
+                logEvent("begin drawing");
+
+
+            currentPoly.push_back(p);
+        } else {
+
+            currentPoly.push_back(p);
+            if(currentPoly.size() > 2) {
+                logEvent("end drawing");
+                snapshot();
+
+                drawPoly(mask, currentPoly, currentLabel);
+            }
+            currentPoly.clear();
+        }
+
 
     case SuperPixels:
         snapshot();
@@ -207,6 +305,7 @@ void Canvas::mousePressEvent(QMouseEvent *event) {
         currentPoint.p = p;
         drawSP(mask, spLabels, currentPoint, currentLabel);
 
+        logEvent("begin_drawing");
         drawing = true;
     default:
     break;
@@ -237,7 +336,7 @@ cv::Mat1b Canvas::selectionMask() {
 
 void Canvas::mouseMove(QMouseEvent *event) {
 
-    cv::Point2f p(event->x() / currentZoom, event->y() / currentZoom);
+    cv::Point2f p = getPosition(event);
 
     if(selecting) {
 
@@ -265,6 +364,9 @@ void Canvas::mouseMove(QMouseEvent *event) {
 
         }
     break;
+
+
+
     case SuperPixels:
         if(drawing) {
             drawSP(mask, spLabels, currentPoint, currentLabel);
@@ -283,7 +385,16 @@ void Canvas::mouseReleaseEvent(QMouseEvent *event) {
     mouseMove(event);
 
     if(selecting) {
+
+        if(selection->area() > 0) {
+            logEvent("selection");
+        }
+
         selecting.reset();
+    }
+
+    if(drawing) {
+        logEvent("end_drawing");
     }
 
     drawing = false;
@@ -324,12 +435,12 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
 
     painter.setRenderHint(QPainter::Antialiasing, false);
 
-    painter.setOpacity(0.4);
-    painter.setCompositionMode(QPainter::CompositionMode_Plus);
+    painter.setOpacity(labelAlpha);
+    //=painter.setCompositionMode(QPainter::CompositionMode_Plus);
     painter.drawPixmap(0, 0, pm);
 
 
-    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    //painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter.setOpacity(1);
 
     QColor lc = QColor(colorTable[currentLabel]);
@@ -351,6 +462,7 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
         }
     break;
     case Points:
+    case SuperPixels:
         painter.setBrush(QBrush(lc));
         painter.drawEllipse(QPointF(currentPoint.p.x, currentPoint.p.y), currentPoint.r, currentPoint.r);
     break;
@@ -359,6 +471,19 @@ void Canvas::paintEvent(QPaintEvent * /* event */) {
         painter.setBrush(QBrush(lc));
         painter.drawEllipse(QPointF(currentPoint.p.x, currentPoint.p.y), currentPoint.r, currentPoint.r);
     break;
+
+    case Polygons: {
+        painter.setBrush(QBrush(lc));
+        std::vector<QPointF> points;
+        for(auto const& p : currentPoly) {
+            points.push_back(QPointF(p.x, p.y));
+        }
+
+        points.push_back(QPointF(currentPoint.p.x, currentPoint.p.y));
+        painter.drawPolygon(&points.front(), currentPoly.size() + 1);
+    }
+    break;
+
 
     default: break;
     }
@@ -380,20 +505,61 @@ void Canvas::setMask(cv::Mat1b const& mask_) {
 void Canvas::setBrushWidth(int width) {
     currentPoint.r = width;
 
-    if(mode == SuperPixels)
-        genOverlay();
-
    // repaint();
 }
 
 void Canvas::cancel() {
    selection.reset();
-   currentLine.reset();
 
+   if(currentLine || drawing || !currentPoly.empty()) {
+       logEvent("end_drawing");
+   }
+
+   currentPoly.clear();
+   currentLine.reset();
    drawing = false;
 
    //repaint();
 }
+
+
+
+void Canvas::grabCut() {
+
+    cv::Mat cutImage = image;
+
+    if(int(probs.size()) > currentLabel) {
+
+        std::vector<cv::Mat1b> channels;
+        cv::split(image, channels);
+        cv::Mat1b rb, gb;
+
+        cv::addWeighted(channels[0], 0.5, channels[2], 0.5, 0.0, rb);
+        cv::addWeighted(channels[1], 0.5, channels[2], 0.5, 0.0, gb);
+
+        std::vector<cv::Mat1b> new_channels = {rb, gb, probs[currentLabel]};
+        cv::merge(channels, cutImage);
+    }
+
+
+    cv::Mat1b m(mask.rows, mask.cols);
+    m.setTo(cv::GC_PR_BGD);
+
+    m.setTo(cv::GC_BGD,    (mask == 0));
+    m.setTo(cv::GC_PR_FGD,    (mask == 1));
+
+
+    cv::Mat fgModel, bgModel;
+    cv::grabCut(cutImage, m, cv::Rect(), fgModel, bgModel, 2, cv::GC_INIT_WITH_MASK);
+
+    cv::Mat1b result(mask.rows, mask.cols);
+    result.setTo(0);
+
+    result.setTo(1, (m == cv::GC_FGD) | (m == cv::GC_PR_FGD));
+    setMask(result);
+
+}
+
 
 
 void Canvas::genOverlay() {
@@ -407,8 +573,17 @@ void Canvas::genOverlay() {
         int levels = 8;
         int n = (image.rows * image.cols) / (spSize*spSize);
 
-        auto sp = cv::ximgproc::createSuperpixelSEEDS(image.cols, image.rows, 3, n, levels, 1 + 4 * (spSmoothness / 100.0), bins, true);
-        sp->iterate(image);
+        std::vector<cv::Mat1b> channels;
+        cv::split(image, channels);
+        if(int(probs.size()) > currentLabel) {
+            channels.push_back(probs[currentLabel]);
+        }
+
+        cv::Mat composite;
+        cv::merge(channels, composite);
+
+        auto sp = cv::ximgproc::createSuperpixelSEEDS(image.cols, image.rows, channels.size(), n, levels, 1 + 4 * (spSmoothness / 100.0), bins, true);
+        sp->iterate(composite);
 
 
 //        auto sp = createSuperpixelSLIC(image, SLICO, spSize, spSmoothness);
@@ -418,10 +593,10 @@ void Canvas::genOverlay() {
 //        sp->iterate(4);
 
 
-        sp->getLabelContourMask(overlay);\
-        sp->getLabels(spLabels);
+        sp->getLabelContourMask(overlay);
+        cv::GaussianBlur(overlay, overlay, cv::Size(3, 3), 1.0, 1.0);
 
-        cv::bitwise_not(overlay, overlay);
+        sp->getLabels(spLabels);
     }
 
     genScaledImage();
@@ -507,12 +682,13 @@ QVector<QRgb> makeColorTable() {
         0x252F99, 0x00CCFF, 0x674E60, 0xFC009C, 0x92896B
     };
 
-    for (auto& c : colors) {
-        QColor col(c);
+    for(int i = 1; i < colors.size(); ++i) {
+        QColor col(colors[i]);
         col.setAlpha(255);
 
-        c = col.rgb();
+        colors[i] = col.rgb();
     }
+
 
     return colors;
 }

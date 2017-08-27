@@ -20,28 +20,27 @@ int main(int argc, char *argv[])
 
     parser.process(app);
 
-    const QStringList args = parser.positionalArguments();\
+    const QStringList args = parser.positionalArguments();
+
+    MainWindow w;
 
     QDir path;
     if(args.size() >= 1) {
         path = QDir(args.at(0));
+
+        if( !path.exists()) {
+            std::cerr << "Directory does not exist: " << path.canonicalPath().toStdString() << std::endl;
+            parser.showHelp(1);      \
+        }
+
+        w.open(path.path());
+
+
     }
 
-    if( !path.exists()) {
-        std::cerr << "Directory does not exist: " << path.canonicalPath().toStdString() << std::endl;
-        parser.showHelp(1);      \
-    }
 
+    w.setWindowState(Qt::WindowMaximized);
+    w.show();
+    return app.exec();
 
-
-    std::cout << "Annotating images in path: " << path.canonicalPath().toStdString()  << std::endl;
-
-    MainWindow w(path);
-    if(w.hasImage()) {
-        w.setWindowState(Qt::WindowMaximized);
-        w.show();
-        return app.exec();
-    } else {
-        std::cerr << "No (more) images found to annotate" << std::endl;
-    }
 }
