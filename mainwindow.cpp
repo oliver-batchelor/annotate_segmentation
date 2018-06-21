@@ -20,6 +20,7 @@
 #include <fstream>
 
 #include <opencv2/imgproc.hpp>
+#include <opencv2/ximgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 inline QColor toColor(QJsonValue const &v) {
@@ -29,6 +30,7 @@ inline QColor toColor(QJsonValue const &v) {
 
 inline OptionalFileInfo findNext(QString const& path, Image& image, OptionalFileInfo const& current=OptionalFileInfo(), bool reverse=false, bool fresh=false);
 inline cv::Mat1b loadMask(std::string const &path);
+inline bool loadModel(QDir const& modelDir, Image &image);
 
 
 inline std::shared_ptr<Config> loadConfig(QJsonObject const &root) {
@@ -80,6 +82,10 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
 
     canvas = new Canvas();
+    layers = {LayerPtr(new Layer(0)), LayerPtr(new Layer(255))};
+    canvas->setLayers(layers);
+
+
     ui->scrollArea->setEnabled(false);
     ui->scrollArea->setWidget(canvas);
 
@@ -109,31 +115,40 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionPoints, &QAction::triggered, canvas, &Canvas::setPoints);
     connect(ui->actionLines, &QAction::triggered, canvas, &Canvas::setLines);
     connect(ui->actionFill, &QAction::triggered, canvas, &Canvas::setFill);
-    connect(ui->actionSuperPixels, &QAction::triggered, canvas, &Canvas::setSuperPixels);
+    //connect(ui->actionSuperPixels, &QAction::triggered, canvas, &Canvas::setSuperPixels);
     connect(ui->actionPolygons, &QAction::triggered, canvas, &Canvas::setPolygons);
 
 
+    connect(ui->actionRefine, &QAction::toggled, [=](bool on) {
+            canvas->setActiveLayer(on ? 1 : 0);
+        });
+
+
     connect(ui->actionRun, &QAction::triggered, this, &MainWindow::runClassifier);
-    connect(ui->actionGrabCut, &QAction::triggered, this, &MainWindow::runGrabCut);
+    //connect(ui->actionGrabCut, &QAction::triggered, this, &MainWindow::runGrabCut);
 
 
     connect(ui->brushWidth, &QSlider::valueChanged, canvas, &Canvas::setBrushWidth);
-    connect(ui->labelIntensity, &QSlider::valueChanged, canvas, &Canvas::setLabelIntensity);
+    connect(ui->labelOpacity, &QSlider::valueChanged, setLayerOpacity(0));
+    connect(ui->refineOpacity, &QSlider::valueChanged, setLayerOpacity(1));
 
 
     connect(canvas, &Canvas::brushWidthChanged, ui->brushWidth, &QSlider::setValue);
 
-    connect(ui->spSize, &QSlider::valueChanged, canvas, &Canvas::setSPSize);
-    connect(ui->spSmoothness, &QSlider::valueChanged, canvas, &Canvas::setSPSmoothness);
-    connect(ui->spOpacity, &QSlider::valueChanged, canvas, &Canvas::setSPOpacity);
+//    connect(ui->spSize, &QSlider::valueChanged, canvas, &Canvas::setSPSize);
+//    connect(ui->spSmoothness, &QSlider::valueChanged, canvas, &Canvas::setSPSmoothness);
+    connect(ui->spOpacity, &QSlider::valueChanged, canvas, &Canvas::setOverlayOpacity);
 
 
 
-    canvas->setSPSize(ui->spSize->value());
-    canvas->setSPSmoothness(ui->spSmoothness->value());
-    canvas->setSPOpacity(ui->spOpacity->value());
+//    canvas->setSPSize(ui->spSize->value());
+//    canvas->setSPSmoothness(ui->spSmoothness->value());
+    canvas->setOverlayOpacity(ui->spOpacity->value());
 
-    canvas->setLabelIntensity(ui->labelIntensity->value());
+    setLayerOpacity(0)(ui->labelOpacity->value());
+    setLayerOpacity(1)(ui->refineOpacity->value());
+
+
     canvas->setBrushWidth(ui->brushWidth->value());
 
 
@@ -164,6 +179,33 @@ inline QListWidgetItem *makeLabel(Label const &label) {
     item->setIcon(QIcon(p));
 
     return item;
+}
+
+
+inline QVector<QRgb> configColorTable(Config const &c) {
+    QVector<QRgb> palette(256, c.ignore_color.rgba());
+
+    int i = 0;
+    for (Label const& l : c.labels) {
+        QColor c = l.color;
+        palette[i++] = c.rgb();
+    }
+
+    return palette;
+}
+
+
+inline QVector<QRgb> setTransparent(QVector<QRgb> const &table, int transparent=0) {
+
+    QVector<QRgb> t = table;
+    if(transparent < t.size()) {
+        QColor c = t[transparent];
+        c.setAlpha(0);
+
+        t[transparent] = c.rgba();
+    }
+
+    return t;
 }
 
 bool MainWindow::open(QString const &path) {
@@ -197,18 +239,35 @@ bool MainWindow::open(QString const &path) {
 
     Label ignoreLabel("ignored", config->ignore_label, config->ignore_color);
     ui->labelList->addItem(makeLabel(ignoreLabel));
+    layers[1]->setDefaultLabel(ignoreLabel.value);
 
 
     ui->labelList->setCurrentRow(0);
-    canvas->setConfig(*config);
-    canvas->setImage(image);
+
+    QVector<QRgb> colorTable = configColorTable(*config);
+    layers[0]->setPalette(setTransparent(colorTable, 0));
+    layers[1]->setPalette(setTransparent(colorTable, ignoreLabel.value));
+
+    layers[1]->setDefaultLabel(ignoreLabel.value);
+
+    setImage(image);
     this->setWindowTitle(next->fileName());
 
-
     ui->scrollArea->setEnabled(true);
-
-
     return true;
+}
+
+
+void MainWindow::setImage(Image const &loaded) {
+    canvas->setImage(loaded.image);
+
+    if(!loaded.prediction.empty())
+        layers[0]->setMask(loaded.prediction);
+
+    if(!loaded.labels.empty())
+        layers[1]->setMask(loaded.labels);
+
+    currentImage = loaded;
 }
 
 
@@ -274,7 +333,7 @@ QString replaceExt(QString const &path, QString const &ext) {
 
 
 bool MainWindow::save() {
-    if(currentEntry /*&& canvas->isModified()*/) {
+    if(currentEntry && canvas->isModified()) {
 
 
         if(!ui->actionAlwaysSave->isChecked()) {
@@ -293,8 +352,7 @@ bool MainWindow::save() {
         QString labelFile = currentEntry->absoluteFilePath() + ".mask";
 
 
-
-        cv::Mat1b mask = canvas->getMask();
+        cv::Mat1b mask = canvas->getActiveLayer()->getMask();
         cv::imwrite(temp.toStdString(), mask);
 
         std::cout << temp.toStdString() << std::endl;
@@ -334,7 +392,6 @@ void MainWindow::discardImage() {
     if(currentEntry && QMessageBox::Yes == QMessageBox::warning(this, "Discard image", "Are you sure you wish to permanantly delete image and annotations?",
                                                                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No)) {
 
-
         QFile file(currentEntry->absoluteFilePath());
         QFile annot(currentEntry->absoluteFilePath() + ".json");
         QFile labels(currentEntry->absoluteFilePath() + ".mask");
@@ -356,7 +413,7 @@ void MainWindow::prevImage() {
 }
 
 void MainWindow::runGrabCut() {
-    canvas->grabCut();
+//    canvas->grabCut();
 
 }
 
@@ -366,18 +423,22 @@ void MainWindow::runClassifier() {
     p.setWorkingDirectory("../segmenter");
     p.setProgram("python3");
 
-    QString maskFile = QDir::currentPath() + "/.mask.png";
-    QFile::remove(maskFile);
+    //QString maskFile = QDir::currentPath() + "/.mask.png";
 
-    p.setArguments({"test.py", filename, "--save", maskFile});
+    QString file = currentEntry->absoluteFilePath();
+    QString maskDir = file + ".model";
+
+    p.setArguments({"test.py", "--image", file, "--save", maskDir, "--model", currentPath + "/log/train/model.pth"});
 
     p.start();
     p.waitForFinished();
 
     if(p.exitCode() == 0) {
+        loadModel(maskDir, currentImage);
+        assert (!currentImage.prediction.empty());
 
-        cv::Mat1b mask = loadMask(maskFile.toStdString());
-        canvas->setMask(mask);
+        layers[0]->setMask(currentImage.prediction);
+
     } else {
         QString perr = p.readAllStandardError();
         QMessageBox::critical(this, "Classifier", perr);
@@ -400,6 +461,36 @@ inline cv::Mat1b loadMask(std::string const &path) {
 }
 
 
+inline bool loadModel(QDir const& modelDir, Image &image) {
+
+    if(modelDir.exists()) {
+        std::string maskPath = (modelDir.path() + "/predictions.png").toStdString();
+
+
+        std::cout << maskPath << std::endl;
+
+        image.prediction = loadMask(maskPath);
+
+        int i = 0;
+        while(true) {
+            std::ostringstream probPath;
+            probPath << modelDir.path().toStdString() << "/class" << i++ << ".jpg";
+
+
+            cv::Mat1b prob = cv::imread(probPath.str(), cv::IMREAD_GRAYSCALE);
+            if(!prob.empty()) {
+                image.probs.push_back(prob);
+            } else {
+                break;
+            }
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
 
 inline bool loadImage(QString const &path, Image &image) {
 
@@ -410,34 +501,17 @@ inline bool loadImage(QString const &path, Image &image) {
         cv::cvtColor(image.image, image.image, cv::COLOR_BGR2RGB);
 
         QDir modelDir(path + ".model");
-        if(modelDir.exists()) {
-            std::string maskPath = (modelDir.path() + "/predictions.png").toStdString();
-            image.predictions = loadMask(maskPath);
-
-            int i = 0;
-            while(true) {
-                std::ostringstream probPath;
-                probPath << modelDir.path().toStdString() << "/class" << i++ << ".jpg";
-
-
-                cv::Mat1b prob = cv::imread(probPath.str(), cv::IMREAD_GRAYSCALE);
-                if(!prob.empty()) {
-                    image.probs.push_back(prob);
-                } else {
-                    break;
-                }
-            }
-        }
+            loadModel(modelDir, image);
 
 
         std::string maskPath = (path + ".mask").toStdString();
-        cv::Mat1b labels = loadMask(maskPath);
-        image.labels = annotated;
+        cv::Mat1b annotated = loadMask(maskPath);
+        if(!annotated.empty()) {
+            image.labels = annotated;
+        }
 
         return true;
     }
-
-
 
     return false;
 }
@@ -484,7 +558,9 @@ bool MainWindow::loadNext(bool reverse) {
     auto next = findNext(currentPath, loaded, currentEntry, reverse, ui->actionFresh->isChecked());
     if(next) {
         this->setWindowTitle(next->fileName());
-        canvas->setImage(loaded);
+        setImage(loaded);
+
+
         currentEntry = next;
     }
 

@@ -51,6 +51,15 @@ protected:
 
     virtual void closeEvent(QCloseEvent *e);
 
+    void setImage(Image const &image);
+
+
+    std::function<void(int)> setLayerOpacity(int layer) {
+        return [=] (int opacity) {
+            layers[layer]->setOpacity(opacity);
+        };
+    }
+
 
 private:
 
@@ -59,11 +68,12 @@ private:
 
 
     std::shared_ptr<Config>  config;
-    QString filename;
-
     Canvas *canvas;
+    std::vector<LayerPtr> layers;
 
     QString currentPath;
+    Image currentImage;
+
     boost::optional<QFileInfo> currentEntry;
 };
 

@@ -10,6 +10,8 @@
 #include <boost/optional.hpp>
 #include <boost/variant.hpp>
 
+#include "layer.h"
+
 #include "opencv2/core.hpp"
 
 enum DrawMode {
@@ -44,14 +46,12 @@ class Canvas : public QWidget
 public:
     Canvas();
 
-    void setConfig(Config const &c);
 
-    void setImage(Image const &image);
-    void setMask(cv::Mat1b const& mask);
 
+//void setConfig(Config const &c);
+    void setImage(cv::Mat3b const &image);
 
     cv::Mat3b const& getImage() const { return image; }
-    cv::Mat1b const& getMask() const { return mask; }
 
     bool isModified() { return undos.size() || redos.size(); }
 
@@ -84,7 +84,6 @@ public slots:
     void setBrushWidth(int width);
 
     void setMode(DrawMode mode);
-    void grabCut();
 
 
     void setSelect() { setMode(Selection); }\
@@ -92,9 +91,9 @@ public slots:
     void setLines() { setMode(Lines); }
     void setFill() { setMode(Fill); }
 
-    void setSuperPixels(cv::Mat1b const &spLabels, cv::Mat1b const& overlay) {
-        overlay = boundaries;
-        spImage = spLabels;
+    void setSuperPixels(cv::Mat1b const &spLabels_, cv::Mat1b const& overlay_) {
+        overlay = overlay_;
+        spLabels = spLabels_;
 
         setMode(SuperPixels);
     }
@@ -103,20 +102,42 @@ public slots:
     void setPolygons() { setMode(Polygons); }
 
 
-    void setSPOpacity(int n) {
-        spOpacity = n;
+    void setOverlayOpacity(int n) {
+        overlayOpacity = n;
         genScaledImage();
     }
+
+    LayerPtr getLayer(int i) {
+        return layers[i];
+    }
+
+    LayerPtr getActiveLayer() {
+        return activeLayer;
+    }
+
+    void setLayers(std::vector<LayerPtr> const &layers_, int active=0) {
+        layers = layers_;
+        activeLayer = layers[active];
+    }
+
+    void setActiveLayer(int i) {
+        activeLayer = layers[i];
+        cancel();
+    }
+
 
     void undo();
     void redo();
     void cancel();
 
     void deleteSelection();
+    cv::Rect2f getSelection();
+
+
 
 
     void snapshot() {
-        undos.push_back(mask.clone());
+        undos.push_back(getState());
         redos.clear();
     }
 
@@ -126,7 +147,6 @@ signals:
 
 protected:
 
-    cv::Mat1b selectionMask();
 
 
     void setPoint(QPointF const &p);
@@ -139,10 +159,26 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event);
 
     void genScaledImage();
-    void genOverlay();
-
     cv::Point2f getPosition(QMouseEvent *event);
 
+
+    typedef std::vector<cv::Mat1b> State;
+
+    State getState() {
+        std::vector<cv::Mat1b> masks;
+
+        for(auto const& l : layers) {
+            masks.push_back(l->getMask().clone());
+        }
+        return masks;
+    }
+
+    void setState(State const& state) {
+
+        for(size_t i = 0; i < state.size(); ++i) {
+            layers[i]->setMask(state[i]);
+        }
+    }
 
 
 private:
@@ -156,13 +192,8 @@ private:
 
     int defaultLabel;
 
-
     int currentLabel;
     float currentZoom;
-
-    float labelAlpha;
-
-    cv::Mat1b mask;
 
     DrawMode mode;
     bool drawing;
@@ -170,29 +201,26 @@ private:
     boost::optional<cv::Rect2f> selection;
     boost::optional<cv::Point2f> selecting;
 
-    std::vector<cv::Mat1b> probs;
     cv::Mat3b image;
-
-    cv::Mat1b overlay;
     cv::Mat1i spLabels;
+
+    int overlayOpacity;
+    cv::Mat1b overlay;
 
     QPixmap scaled;
 
-    QVector<QRgb> colorTable;
+    std::vector<LayerPtr> layers;
 
-    std::vector<cv::Mat1b> undos;
-    std::vector<cv::Mat1b> redos;
+    LayerPtr activeLayer;
 
 
-    int spSize;
-    int spSmoothness;
-    int spOpacity;
+    std::vector<State> undos;
+    std::vector<State> redos;
 
     QTimer *timer;
     QTime time;
 
     std::vector<Event> log;
-
 
 };
 

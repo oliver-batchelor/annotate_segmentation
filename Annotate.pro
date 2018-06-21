@@ -26,7 +26,7 @@ HEADERS  += mainwindow.h \
 FORMS    += mainwindow.ui
 
 CONFIG += c++11 
-QMAKE_CXXFLAGS += --std=c++11 `pkg-config opencv --cflags`
+QMAKE_CXXFLAGS += --std=c++11 `pkg-config opencv --cflags` -ltiff
 LIBS = `pkg-config --libs opencv`
 
 RESOURCES += \

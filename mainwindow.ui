@@ -81,7 +81,7 @@
             <item row="1" column="0">
              <widget class="QLabel" name="brushSizeLabel_2">
               <property name="text">
-               <string>Label Intensity</string>
+               <string>Label opacity</string>
               </property>
              </widget>
             </item>
@@ -93,7 +93,7 @@
              </widget>
             </item>
             <item row="2" column="2">
-             <widget class="QSlider" name="overlayIntensity">
+             <widget class="QSlider" name="refineOpacity">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
                 <horstretch>0</horstretch>
@@ -114,8 +114,15 @@
               </property>
              </widget>
             </item>
-            <item row="1" column="1" colspan="2">
-             <widget class="QSlider" name="labelIntensity">
+            <item row="2" column="0" colspan="2">
+             <widget class="QLabel" name="brushSizeLabel_3">
+              <property name="text">
+               <string>Refine opacity</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="2">
+             <widget class="QSlider" name="labelOpacity">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
                 <horstretch>0</horstretch>
@@ -136,14 +143,7 @@
               </property>
              </widget>
             </item>
-            <item row="2" column="0" colspan="2">
-             <widget class="QLabel" name="brushSizeLabel_3">
-              <property name="text">
-               <string>Overlay Intensity</string>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="1" colspan="2">
+            <item row="0" column="2">
              <widget class="QSlider" name="brushWidth">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -337,7 +337,7 @@
    <addaction name="action_Delete"/>
    <addaction name="separator"/>
    <addaction name="actionRun"/>
-   <addaction name="actionsOverlay"/>
+   <addaction name="actionRefine"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <widget class="QToolBar" name="toolBar">
@@ -631,7 +631,7 @@
     <string>Polygons</string>
    </property>
   </action>
-  <action name="actionsOverlay">
+  <action name="actionRefine">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -640,7 +640,10 @@
      <normaloff>:/icons/draw-path.png</normaloff>:/icons/draw-path.png</iconset>
    </property>
    <property name="text">
-    <string>Overlay</string>
+    <string>Refine</string>
+   </property>
+   <property name="toolTip">
+    <string>Refine mask</string>
    </property>
   </action>
  </widget>
